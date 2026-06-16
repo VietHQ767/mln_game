@@ -1,6 +1,6 @@
-import { DoorClosed, Dumbbell, Swords, UserRound, Zap } from "lucide-react";
+import { DoorClosed, Swords, UserRound } from "lucide-react";
 
-type GameMode = "1vsBot" | "11vs11" | "Practice";
+type GameMode = "11vs11";
 type TeamChoice = "RED" | "BLUE";
 
 interface MainMenuProps {
@@ -12,14 +12,9 @@ interface MainMenuProps {
   teamMaxSize: number;
   teamRedFull: boolean;
   teamBlueFull: boolean;
-  practiceTeammates: number;
-  practiceOpponents: number;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectTeam: (team: TeamChoice) => void;
-  onPracticeTeammatesChange: (value: number) => void;
-  onPracticeOpponentsChange: (value: number) => void;
-  onCreatePracticeRoom: () => void;
   // 11vs11: luon vao cung 1 phong duy nhat (khong nhap ma phong).
   onJoinFixedRoom: () => void;
   onExit: () => void;
@@ -34,19 +29,13 @@ export default function MainMenu({
   teamMaxSize,
   teamRedFull,
   teamBlueFull,
-  practiceTeammates,
-  practiceOpponents,
   onPlayerNameChange,
   onSelectMode,
   onSelectTeam,
-  onPracticeTeammatesChange,
-  onPracticeOpponentsChange,
-  onCreatePracticeRoom,
   onJoinFixedRoom,
   onExit
 }: MainMenuProps) {
   const showRoomTools = selectedMode === "11vs11";
-  const showPracticeTools = selectedMode === "Practice";
   const selectedTeamFull = selectedTeam === "RED" ? teamRedFull : teamBlueFull;
 
   return (
@@ -67,20 +56,7 @@ export default function MainMenu({
           onChange={(e) => onPlayerNameChange(e.target.value)}
         />
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <button
-            onClick={() => onSelectMode("1vsBot")}
-            className={`rounded-xl border p-4 text-left transition ${
-              selectedMode === "1vsBot"
-                ? "border-emerald-300 bg-emerald-500/20"
-                : "border-slate-700 bg-slate-800/80 hover:border-emerald-300/70"
-            }`}
-          >
-            <div className="mb-2 flex items-center gap-2 text-base font-bold text-white">
-              <Zap size={18} /> 1 vs May
-            </div>
-            <p className="text-xs text-slate-200">1 nguoi choi doi dau 11 cau thu BOT ben doi Xanh.</p>
-          </button>
+        <div className="mt-5 grid gap-3 md:grid-cols-1">
           <button
             onClick={() => onSelectMode("11vs11")}
             className={`rounded-xl border p-4 text-left transition ${
@@ -93,19 +69,6 @@ export default function MainMenu({
               <Swords size={18} /> 11 vs 11
             </div>
             <p className="text-xs text-slate-200">Che do dau doi tieu chuan cho lop hoc (toi da 11v11).</p>
-          </button>
-          <button
-            onClick={() => onSelectMode("Practice")}
-            className={`rounded-xl border p-4 text-left transition ${
-              selectedMode === "Practice"
-                ? "border-cyan-300 bg-cyan-500/20"
-                : "border-slate-700 bg-slate-800/80 hover:border-cyan-300/70"
-            }`}
-          >
-            <div className="mb-2 flex items-center gap-2 text-base font-bold text-white">
-              <Dumbbell size={18} /> Practice
-            </div>
-            <p className="text-xs text-slate-200">Tu cau hinh so bot dong doi va doi thu de luyen tap.</p>
           </button>
         </div>
 
@@ -159,43 +122,6 @@ export default function MainMenu({
                 {selectedTeamFull ? "Doi da day" : "Vao phong"}
               </button>
             </div>
-          </div>
-        )}
-
-        {showPracticeTools && (
-          <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
-            {/* Form cau hinh nhanh cho phong luyen tap */}
-            <h3 className="mb-2 text-sm font-semibold text-slate-200">Cau hinh san tap</h3>
-            <div className="grid gap-2 md:grid-cols-2">
-              <label className="text-xs text-slate-300">
-                So dong doi BOT (0-10)
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={practiceTeammates}
-                  onChange={(e) => onPracticeTeammatesChange(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-                />
-              </label>
-              <label className="text-xs text-slate-300">
-                So doi thu BOT (1-11)
-                <input
-                  type="number"
-                  min={1}
-                  max={11}
-                  value={practiceOpponents}
-                  onChange={(e) => onPracticeOpponentsChange(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-                />
-              </label>
-            </div>
-            <button
-              onClick={onCreatePracticeRoom}
-              className="mt-3 w-full rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white"
-            >
-              Vao san tap
-            </button>
           </div>
         )}
 

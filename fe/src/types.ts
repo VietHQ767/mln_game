@@ -17,6 +17,7 @@ export interface Player {
   isBot?: boolean;
   role?: string;
   energy?: number;
+  frozenUntil?: number;
 }
 
 export interface Ball {
@@ -45,7 +46,7 @@ export interface GKDuelPayload {
 }
 
 export interface MatchState {
-  phase: "PLAYING" | "DUEL" | "THROW_IN" | "CORNER_KICK" | "GOAL_KICK" | "GK_DUEL";
+  phase: "PLAYING" | "DUEL" | "THROW_IN" | "CORNER_KICK" | "GOAL_KICK";
   notice?: string;
   setPiece?: {
     type: "THROW_IN" | "CORNER_KICK" | "GOAL_KICK";
@@ -82,4 +83,8 @@ export interface GameState {
   };
   match: MatchState;
   ballHolderId: string | null;
+  score?: {
+    RED: number;
+    BLUE: number;
+  };
 }

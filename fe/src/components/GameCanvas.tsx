@@ -116,15 +116,7 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
 
     const drawPlayer = () => {
       Object.values(gameState.players).forEach((player) => {
-        const isGoalkeeper = player.role === "GK";
-        // Mau thu mon khac biet: Do = vang neon, Xanh = cam; cau thu thuong giu mau doi.
-        const teamColor = isGoalkeeper
-          ? player.team === "RED"
-            ? "#FFFF00"
-            : "#FF8C00"
-          : player.team === "RED"
-            ? "#ff4d4f"
-            : "#4d7dff";
+        const teamColor = player.team === "RED" ? "#ff4d4f" : "#4d7dff";
         const playerRadius = Math.max(5, sx(player.radius * 0.55));
         const holderRingRadius = playerRadius + Math.max(2, sx(2.2));
         const selfRingRadius = playerRadius + Math.max(4, sx(4.5));
@@ -132,15 +124,6 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
         ctx.arc(sx(player.x), sy(player.y), playerRadius, 0, Math.PI * 2);
         ctx.fillStyle = teamColor;
         ctx.fill();
-
-        // Vien to cho thu mon de de nhan biet tren nen san xanh.
-        if (isGoalkeeper) {
-          ctx.beginPath();
-          ctx.arc(sx(player.x), sy(player.y), playerRadius + Math.max(1.5, sx(1.5)), 0, Math.PI * 2);
-          ctx.strokeStyle = player.team === "RED" ? "#FFD700" : "#FF6B00";
-          ctx.lineWidth = Math.max(1.5, sx(1.8));
-          ctx.stroke();
-        }
 
         if (player.id === gameState.ballHolderId) {
           ctx.beginPath();
@@ -158,12 +141,21 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
           ctx.stroke();
         }
 
+        const frozenUntil = player.frozenUntil ?? 0;
+        if (frozenUntil > Date.now()) {
+          ctx.beginPath();
+          ctx.arc(sx(player.x), sy(player.y), playerRadius + Math.max(3, sx(3.5)), 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(120, 220, 255, 0.9)";
+          ctx.lineWidth = Math.max(2, sx(2.2));
+          ctx.setLineDash([Math.max(3, sx(3)), Math.max(3, sx(3))]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
         ctx.font = `${Math.max(9, sx(9))}px Arial`;
         ctx.textAlign = "center";
         ctx.fillStyle = "#ffffff";
-        // Hien thi nhan "GK" ben canh ten de phan biet thu mon.
-        const gkTag = isGoalkeeper ? "GK " : "";
-        const label = player.isBot ? `${gkTag}BOT ${player.name}` : `${gkTag}${player.name}`;
+        const label = player.isBot ? `BOT ${player.name}` : player.name;
         ctx.fillText(label, sx(player.x), sy(player.y) - playerRadius - Math.max(5, sy(5)));
 
         // Thanh nang luong nho ben duoi ten (vang), toi da 100.
@@ -198,7 +190,7 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = "#ffe082";
       ctx.font = "bold 28px Arial";
-      ctx.fillText("DUEL - QUIZ BATTLE", canvas.width / 2, sy(55));
+      ctx.fillText("TRANH CHAP BONG", canvas.width / 2, sy(55));
     }
   }, [gameState]);
 

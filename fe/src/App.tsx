@@ -4,10 +4,10 @@ import GameCanvas from "./components/GameCanvas";
 import MainMenu from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
-import GKQuizModal from "./components/GKQuizModal";
-import type { DuelPayload, GKDuelPayload, GameState } from "./types";
+import ScoreBoard from "./components/ScoreBoard";
+import type { DuelPayload, GameState } from "./types";
 
-type GameMode = "1vsBot" | "11vs11" | "Practice";
+type GameMode = "11vs11";
 type TeamChoice = "RED" | "BLUE";
 
 // URL backend: production lay tu Vercel env VITE_BACKEND_URL, local mac dinh localhost:3000.
@@ -35,15 +35,14 @@ const initialGameState: GameState = {
   ball: { x: 400, y: 250, radius: 9 },
   field: { width: 800, height: 500 },
   match: { phase: "PLAYING" },
-  ballHolderId: null
+  ballHolderId: null,
+  score: { RED: 0, BLUE: 0 }
 };
 
 export default function App() {
   const [showMenu, setShowMenu] = useState(true);
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
   const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
-  const [practiceTeammates, setPracticeTeammates] = useState(0);
-  const [practiceOpponents, setPracticeOpponents] = useState(1);
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
   const pendingNoticeRef = useRef<string | null>(null);
   const [teamAvailability, setTeamAvailability] = useState({
@@ -56,9 +55,8 @@ export default function App() {
   });
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [duelData, setDuelData] = useState<DuelPayload | null>(null);
-  const [gkDuelData, setGkDuelData] = useState<GKDuelPayload | null>(null);
   const [hasAnswered, setHasAnswered] = useState(false);
-  const [hasAnsweredGk, setHasAnsweredGk] = useState(false);
+  const [showEnergyCharger, setShowEnergyCharger] = useState(false);
   const [inputState, setInputState] = useState({
     up: false,
     down: false,
@@ -146,14 +144,6 @@ export default function App() {
       setDuelData(null);
       setHasAnswered(false);
     });
-    socket.on("start-gk-duel", (payload: GKDuelPayload) => {
-      setGkDuelData(payload);
-      setHasAnsweredGk(false);
-    });
-    socket.on("gk-duel-result", () => {
-      setGkDuelData(null);
-      setHasAnsweredGk(false);
-    });
     socket.on("action-denied", (payload: { message?: string }) => {
       if (payload?.message) alert(payload.message);
     });
@@ -170,8 +160,6 @@ export default function App() {
       socket.off("room-error");
       socket.off("start-duel");
       socket.off("duel-result");
-      socket.off("start-gk-duel");
-      socket.off("gk-duel-result");
       socket.off("action-denied");
       socket.off("room-full");
     };
@@ -191,6 +179,10 @@ export default function App() {
   }, [showMenu, selectedMode]);
 
   useEffect(() => {
+    if (showMenu) setShowEnergyCharger(false);
+  }, [showMenu]);
+
+  useEffect(() => {
     const emitInput = (next: typeof inputState) => {
       socket.emit("move", next);
     };
@@ -201,6 +193,12 @@ export default function App() {
       if (event.code === "Space") {
         event.preventDefault();
         socket.emit("kick-ball");
+        return;
+      }
+
+      if (event.code === "KeyQ") {
+        event.preventDefault();
+        setShowEnergyCharger((prev) => !prev);
         return;
       }
 
@@ -235,39 +233,8 @@ export default function App() {
     };
   }, [keyMap, showMenu]);
 
-  const startSession = (
-    mode: "create-room" | "join-room",
-    gameMode: GameMode,
-    roomId?: string,
-    team?: TeamChoice
-  ) => {
-    const finalName = playerName.trim() || "Player";
-    localStorage.setItem("playerName", finalName);
-    socket.emit("set-player-profile", { playerName: finalName });
-
-    const preferredTeam = gameMode === "11vs11" ? team ?? selectedTeam : undefined;
-
-    if (mode === "create-room") {
-      const generatedRoomId = roomId || `${gameMode.toLowerCase()}-${Date.now()}`;
-      socket.emit("create-room", {
-        roomId: generatedRoomId,
-        playerName: finalName,
-        gameMode,
-        preferredTeam
-      });
-    } else if (roomId) {
-      socket.emit("join-room", { roomId, playerName: finalName, gameMode, preferredTeam });
-    }
-  };
-
   const handleSelectMode = (mode: GameMode) => {
     setSelectedMode(mode);
-
-    // Che do 1vsBot vao tran ngay khi bam nut.
-    if (mode === "1vsBot") {
-      startSession("create-room", mode, `bot-${Date.now()}`);
-      return;
-    }
 
     if (mode === "11vs11") {
       setSelectedTeam("RED");
@@ -284,18 +251,6 @@ export default function App() {
     socket.emit("join-fixed-11vs11", { playerName: finalName, preferredTeam: selectedTeam });
   };
 
-  const handleCreatePracticeRoom = () => {
-    const finalName = playerName.trim() || "Player";
-    localStorage.setItem("playerName", finalName);
-    socket.emit("set-player-profile", { playerName: finalName });
-
-    socket.emit("create-practice-room", {
-      playerName: finalName,
-      teammates: Math.max(0, Math.min(10, practiceTeammates)),
-      opponents: Math.max(1, Math.min(11, practiceOpponents))
-    });
-  };
-
   const handleExit = () => {
     window.close();
     document.body.innerHTML =
@@ -306,12 +261,6 @@ export default function App() {
     if (!duelData || hasAnswered) return;
     setHasAnswered(true);
     socket.emit("submit-answer", { answer });
-  };
-
-  const submitGkAnswer = (answer: "A" | "B" | "C" | "D") => {
-    if (!gkDuelData || hasAnsweredGk) return;
-    setHasAnsweredGk(true);
-    socket.emit("submit-gk-answer", { answer });
   };
 
   function handleShootBall(mouseX: number, mouseY: number) {
@@ -346,14 +295,9 @@ export default function App() {
             teamMaxSize={teamAvailability.maxTeamSize}
             teamRedFull={teamAvailability.redFull}
             teamBlueFull={teamAvailability.blueFull}
-          practiceTeammates={practiceTeammates}
-          practiceOpponents={practiceOpponents}
           onPlayerNameChange={setPlayerName}
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
-          onPracticeTeammatesChange={(value) => setPracticeTeammates(Number.isFinite(value) ? value : 0)}
-          onPracticeOpponentsChange={(value) => setPracticeOpponents(Number.isFinite(value) ? value : 1)}
-          onCreatePracticeRoom={handleCreatePracticeRoom}
           onJoinFixedRoom={handleJoinFixedRoom}
           onExit={handleExit}
         />
@@ -365,7 +309,12 @@ export default function App() {
               onShootBall={handleShootBall}
               onPassBall={handlePassBall}
             />
-            <div className="pointer-events-none fixed left-1/2 top-4 z-20 -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur">
+            <ScoreBoard red={gameState.score?.RED ?? 0} blue={gameState.score?.BLUE ?? 0} />
+            <div
+              className={`pointer-events-none fixed left-1/2 z-20 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur ${
+                showEnergyCharger ? "top-44" : "top-4"
+              }`}
+            >
               {gameState.match.notice ||
                 (gameState.match.phase === "PLAYING"
                   ? "Bong dang song"
@@ -382,8 +331,11 @@ export default function App() {
                         : "Dang phat bong len - bam SPACE de da")}
             </div>
             <QuizModal duelData={duelData} answered={hasAnswered} onSubmitAnswer={submitAnswer} />
-            <GKQuizModal data={gkDuelData} answered={hasAnsweredGk} onSubmit={submitGkAnswer} />
-            <EnergyCharger onRecharge={() => socket.emit("recharge-energy")} />
+            <EnergyCharger
+              open={showEnergyCharger}
+              onClose={() => setShowEnergyCharger(false)}
+              onRecharge={() => socket.emit("recharge-energy")}
+            />
           </div>
         </div>
       )}
