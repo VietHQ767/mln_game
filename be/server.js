@@ -30,8 +30,8 @@ const io = new Server(server, {
 // Render tu dong gan PORT; local mac dinh 3000.
 const PORT = Number(process.env.PORT) || 3000;
 const TICK_RATE = 30;
-// 11 vs 11 su dung 1 phong duy nhat.
-const FIXED_11VS11_ROOM_ID = "11vs11-room";
+// 4 vs 4 su dung 1 phong duy nhat.
+const FIXED_4VS4_ROOM_ID = "4vs4-room";
 const FIELD_WIDTH = 800;
 const FIELD_HEIGHT = 500;
 const FIELD_MARGIN = 20;
@@ -53,8 +53,8 @@ const PENALTY_MAX_Y = 400;
 const PLAYER_RADIUS = 14;
 const PLAYER_SPEED = 3;
 const BALL_RADIUS = 9;
-const MAX_PLAYERS = 22;
-const MAX_TEAM_SIZE = 11;
+const MAX_PLAYERS = 8;
+const MAX_TEAM_SIZE = 4;
 const DRIBBLE_DISTANCE = PLAYER_RADIUS + BALL_RADIUS + 2;
 const BALL_FREE_SPEED = 6.2;
 const SHOOT_SPEED = 15;
@@ -268,7 +268,7 @@ function createEmptyRoom(roomId, roomName) {
   return {
     id: roomId,
     name: roomName || `Room ${roomId}`,
-    gameMode: "11vs11",
+    gameMode: "4vs4",
     players: {},
     playerCounter: 0,
     ball: {
@@ -751,7 +751,7 @@ function getKickoffRepresentative(room, team) {
 }
 
 function maybeStartKickoff(room) {
-  if (room.gameMode !== "11vs11") return;
+  if (room.gameMode !== "4vs4") return;
   if (room.match.kickoffDone || room.match.duel) return;
 
   if (!hasHumanOnTeam(room, TEAM_RED) || !hasHumanOnTeam(room, TEAM_BLUE)) {
@@ -1710,8 +1710,8 @@ function removePlayerFromRoom(socketId) {
   emitRoomListToAll();
 }
 
-function normalizeFixed11vs11Room(room) {
-  room.gameMode = "11vs11";
+function normalizeFixed4vs4Room(room) {
+  room.gameMode = "4vs4";
   room.botCarrierId = null;
   room.botPassTargetId = null;
   room.practiceOwnerId = null;
@@ -1755,7 +1755,7 @@ function joinRoom(socket, roomId, playerName, preferredTeam) {
     }
     team = TEAM_RED;
   } else {
-    // 11vs11: nguoi choi tu chon doi; doi day thi chi cho phep doi con lai.
+    // 4vs4: nguoi choi tu chon doi; doi day thi chi cho phep doi con lai.
     if (Object.keys(room.players).length >= MAX_PLAYERS) {
       socket.emit("room-full", { message: "Phong da du 22 nguoi choi." });
       return;
@@ -1845,21 +1845,21 @@ io.on("connection", (socket) => {
     let finalRoomId =
       String(roomId || "").trim() || `room-${Date.now()}-${++roomCounter}`;
     // Chap nhan ca gia tri cu de tranh vo tuong thich.
-    let normalizedMode = "11vs11";
+    let normalizedMode = "4vs4";
     if (gameMode === "1vsBot") normalizedMode = "1vsBot";
-    if (gameMode === "11vs11" || gameMode === "1vs11" || gameMode === "Custom") {
-      normalizedMode = "11vs11";
+    if (gameMode === "4vs4" || gameMode === "11vs11" || gameMode === "1vs11" || gameMode === "Custom") {
+      normalizedMode = "4vs4";
     }
     if (gameMode === "practice" || gameMode === "Practice") {
       normalizedMode = "practice";
     }
 
-    // 11 vs 11 luon su dung 1 phong duy nhat gom 22 nguoi (11/11).
-    if (normalizedMode === "11vs11") {
-      finalRoomId = FIXED_11VS11_ROOM_ID;
+    // 4 vs 4 luon su dung 1 phong duy nhat gom 8 nguoi (4/4).
+    if (normalizedMode === "4vs4") {
+      finalRoomId = FIXED_4VS4_ROOM_ID;
     }
 
-    const roomName = normalizedMode === "11vs11" ? "Phong 11 vs 11" : `Phong ${finalRoomId}`;
+    const roomName = normalizedMode === "4vs4" ? "Phong 4 vs 4" : `Phong ${finalRoomId}`;
 
     if (!rooms.has(finalRoomId)) {
       const newRoom = createEmptyRoom(finalRoomId, roomName);
@@ -1901,17 +1901,17 @@ io.on("connection", (socket) => {
     joinRoom(socket, String(roomId || "").trim(), playerName || profileName, preferredTeam);
   });
 
-  // 11vs11: vao phong tu dong (khong can nhap ma phong).
+  // 4vs4: vao phong tu dong (khong can nhap ma phong).
   // Server se chon 1 phong con slot, uu tien phong ma doi nguoi choi dang chon con du slot.
   socket.on("join-any-room", ({ gameMode, playerName, preferredTeam }) => {
-    const mode = gameMode === "1vsBot" ? "1vsBot" : gameMode === "practice" ? "practice" : "11vs11";
-    if (mode !== "11vs11") {
-      socket.emit("room-error", { message: "Chi ho tro join tu dong cho che do 11 vs 11." });
+    const mode = gameMode === "1vsBot" ? "1vsBot" : gameMode === "practice" ? "practice" : "4vs4";
+    if (mode !== "4vs4") {
+      socket.emit("room-error", { message: "Chi ho tro join tu dong cho che do 4 vs 4." });
       return;
     }
 
     const candidates = Array.from(rooms.values())
-      .filter((r) => r.gameMode === "11vs11" && Object.keys(r.players).length < MAX_PLAYERS)
+      .filter((r) => r.gameMode === "4vs4" && Object.keys(r.players).length < MAX_PLAYERS)
       .map((r) => {
         const t = getTeamAvailability(r);
         const preferredAvailable =
@@ -1920,7 +1920,7 @@ io.on("connection", (socket) => {
       });
 
     if (candidates.length === 0) {
-      socket.emit("room-full", { message: "Chua co phong 11 vs 11 nao con slot." });
+      socket.emit("room-full", { message: "Chua co phong 4 vs 4 nao con slot." });
       return;
     }
 
@@ -1935,15 +1935,15 @@ io.on("connection", (socket) => {
     joinRoom(socket, chosen.id, playerName || profileName, preferredTeam);
   });
 
-  // 11vs11: vao phong co dinh duy nhat.
-  socket.on("join-fixed-11vs11", ({ playerName, preferredTeam }) => {
-    const roomId = FIXED_11VS11_ROOM_ID;
+  // 4vs4: vao phong co dinh duy nhat.
+  socket.on("join-fixed-4vs4", ({ playerName, preferredTeam }) => {
+    const roomId = FIXED_4VS4_ROOM_ID;
     if (!rooms.has(roomId)) {
-      const newRoom = createEmptyRoom(roomId, "Phong 11 vs 11");
-      newRoom.gameMode = "11vs11";
+      const newRoom = createEmptyRoom(roomId, "Phong 4 vs 4");
+      newRoom.gameMode = "4vs4";
       rooms.set(roomId, newRoom);
     } else {
-      normalizeFixed11vs11Room(rooms.get(roomId));
+      normalizeFixed4vs4Room(rooms.get(roomId));
     }
     const profileName = socketProfiles.get(socket.id)?.playerName;
     joinRoom(socket, roomId, playerName || profileName, preferredTeam);

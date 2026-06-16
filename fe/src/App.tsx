@@ -7,7 +7,7 @@ import EnergyCharger from "./components/EnergyCharger";
 import ScoreBoard from "./components/ScoreBoard";
 import type { DuelPayload, GameState } from "./types";
 
-type GameMode = "11vs11";
+type GameMode = "4vs4";
 type TeamChoice = "RED" | "BLUE";
 
 // URL backend: production lay tu Vercel env VITE_BACKEND_URL, local mac dinh localhost:3000.
@@ -26,8 +26,8 @@ const socket: Socket = io(SOCKET_URL, {
   transports: ["websocket", "polling"]
 });
 
-// 11 vs 11 luon su dung 1 phong duy nhat.
-const FIXED_11VS11_ROOM_ID = "11vs11-room";
+// 4 vs 4 luon su dung 1 phong duy nhat.
+const FIXED_4VS4_ROOM_ID = "4vs4-room";
 
 const initialGameState: GameState = {
   myId: null,
@@ -165,12 +165,12 @@ export default function App() {
     };
   }, []);
 
-  // Cap nhat thong tin so nguoi trong 2 doi khi dang o menu mode 11 vs 11.
+  // Cap nhat thong tin so nguoi trong 2 doi khi dang o menu mode 4 vs 4.
   useEffect(() => {
-    if (!showMenu || selectedMode !== "11vs11") return;
+    if (!showMenu || selectedMode !== "4vs4") return;
 
     const request = () => {
-      socket.emit("request-room-info", { roomId: FIXED_11VS11_ROOM_ID });
+      socket.emit("request-room-info", { roomId: FIXED_4VS4_ROOM_ID });
     };
 
     request();
@@ -242,19 +242,19 @@ export default function App() {
   const handleSelectMode = (mode: GameMode) => {
     setSelectedMode(mode);
 
-    if (mode === "11vs11") {
+    if (mode === "4vs4") {
       setSelectedTeam("RED");
     }
   };
 
   const handleJoinFixedRoom = () => {
-    if (selectedMode !== "11vs11") return;
+    if (selectedMode !== "4vs4") return;
     const finalName = playerName.trim() || "Player";
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
     pendingNoticeRef.current = "Vao phong thanh cong!";
-    socket.emit("join-fixed-11vs11", { playerName: finalName, preferredTeam: selectedTeam });
+    socket.emit("join-fixed-4vs4", { playerName: finalName, preferredTeam: selectedTeam });
   };
 
   const handleExit = () => {
