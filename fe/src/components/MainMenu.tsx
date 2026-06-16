@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
 import { DoorClosed, Dumbbell, Swords, UserRound, Zap } from "lucide-react";
-import type { Room } from "../types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
 type TeamChoice = "RED" | "BLUE";
@@ -9,24 +7,16 @@ interface MainMenuProps {
   playerName: string;
   selectedMode: GameMode | null;
   selectedTeam: TeamChoice;
-  // Chi dung cho luong "Tao phong": nguoi dung nhap ma phong va bam Create.
-  roomCode: string;
   practiceTeammates: number;
   practiceOpponents: number;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectTeam: (team: TeamChoice) => void;
-  onRoomCodeChange: (value: string) => void;
   onPracticeTeammatesChange: (value: number) => void;
   onPracticeOpponentsChange: (value: number) => void;
   onCreatePracticeRoom: () => void;
-  onCreateModeRoom: () => void;
-  // 11vs11: vao phong tu dong, khong nhap ma phong.
-  onJoinAnyRoom: () => void;
-  // Danh sach phong da tao (chi hien sau khi nhan Create).
-  showCreatedRoomsList: boolean;
-  createdRooms: Room[];
-  onJoinCreatedRoom: (roomId: string) => void;
+  // 11vs11: luon vao cung 1 phong duy nhat (khong nhap ma phong).
+  onJoinFixedRoom: () => void;
   onExit: () => void;
 }
 
@@ -34,30 +24,19 @@ export default function MainMenu({
   playerName,
   selectedMode,
   selectedTeam,
-  roomCode,
   practiceTeammates,
   practiceOpponents,
   onPlayerNameChange,
   onSelectMode,
   onSelectTeam,
-  onRoomCodeChange,
   onPracticeTeammatesChange,
   onPracticeOpponentsChange,
   onCreatePracticeRoom,
-  onCreateModeRoom,
-  onJoinAnyRoom,
-  showCreatedRoomsList,
-  createdRooms,
-  onJoinCreatedRoom,
+  onJoinFixedRoom,
   onExit
 }: MainMenuProps) {
   const showRoomTools = selectedMode === "11vs11";
   const showPracticeTools = selectedMode === "Practice";
-  const [showCreatePanel, setShowCreatePanel] = useState(false);
-
-  useEffect(() => {
-    if (!showRoomTools) setShowCreatePanel(false);
-  }, [showRoomTools]);
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/75 backdrop-blur-md">
@@ -150,58 +129,19 @@ export default function MainMenu({
             <div className="grid gap-2 md:grid-cols-2">
               <button
                 type="button"
-                onClick={() => setShowCreatePanel(true)}
+                onClick={onJoinFixedRoom}
                 className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_18px_rgba(251,191,36,0.25)] transition hover:brightness-110"
               >
                 Tao phong
               </button>
               <button
                 type="button"
-                onClick={onJoinAnyRoom}
+                onClick={onJoinFixedRoom}
                 className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
               >
                 Vao phong
               </button>
             </div>
-
-            {showCreatePanel && (
-              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
-                <input
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400"
-                  placeholder="Nhap ma phong de tao..."
-                  value={roomCode}
-                  onChange={(e) => onRoomCodeChange(e.target.value)}
-                />
-                <button
-                  onClick={onCreateModeRoom}
-                  className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
-                >
-                  Create
-                </button>
-              </div>
-            )}
-
-            {showCreatedRoomsList && createdRooms.length > 0 && (
-              <div className="mt-3">
-                <h3 className="mb-2 text-sm font-semibold text-slate-200">Phong da tao</h3>
-                <div className="grid gap-2">
-                  {createdRooms.map((room) => (
-                    <button
-                      key={room.id}
-                      type="button"
-                      onClick={() => onJoinCreatedRoom(room.id)}
-                      className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-left text-sm text-slate-100 transition hover:border-sky-400"
-                    >
-                      <div className="font-medium">{room.name}</div>
-                      <div className="mt-1 text-xs text-slate-300">
-                        {room.players}/{room.capacity} nguoi | Do: {room.redCount ?? 0}/11 | Xanh:{" "}
-                        {room.blueCount ?? 0}/11
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 

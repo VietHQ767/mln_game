@@ -5,7 +5,7 @@ import MainMenu from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
 import GKQuizModal from "./components/GKQuizModal";
-import type { DuelPayload, GKDuelPayload, GameState, Room } from "./types";
+import type { DuelPayload, GKDuelPayload, GameState } from "./types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
 type TeamChoice = "RED" | "BLUE";
@@ -31,15 +31,10 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(true);
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
   const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
-  const [roomCode, setRoomCode] = useState("");
   const [practiceTeammates, setPracticeTeammates] = useState(0);
   const [practiceOpponents, setPracticeOpponents] = useState(1);
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
   const pendingNoticeRef = useRef<string | null>(null);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [createdRoomIds, setCreatedRoomIds] = useState<string[]>([]);
-  const [showCreatedRoomsList, setShowCreatedRoomsList] = useState(false);
-  const createdRooms = rooms.filter((r) => createdRoomIds.includes(r.id));
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [duelData, setDuelData] = useState<DuelPayload | null>(null);
   const [gkDuelData, setGkDuelData] = useState<GKDuelPayload | null>(null);
@@ -74,6 +69,8 @@ export default function App() {
   useEffect(() => {
     socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
       setGameState({ ...payload, myId: payload.myId });
+      // Chi an menu khi server xac nhan vao phong thanh cong.
+      setShowMenu(false);
       const notice = pendingNoticeRef.current;
       if (notice) {
         alert(notice);
@@ -83,14 +80,9 @@ export default function App() {
     socket.on("gameState", (payload: Omit<GameState, "myId">) => {
       setGameState((prev) => ({ ...prev, ...payload }));
     });
-    socket.on("room-list", (roomData: Room[]) => {
-      if (Array.isArray(roomData)) setRooms(roomData);
-    });
     socket.on("room-error", (payload: { message?: string }) => {
       if (payload?.message) alert(payload.message);
-    });
-    socket.on("room-created", (payload: { exists?: boolean; roomId?: string }) => {
-      if (payload?.exists) alert("Tao phong thanh cong!");
+      setShowMenu(true);
     });
     socket.on("start-duel", (payload: DuelPayload) => {
       setDuelData(payload);
@@ -119,9 +111,7 @@ export default function App() {
     return () => {
       socket.off("init");
       socket.off("gameState");
-      socket.off("room-list");
       socket.off("room-error");
-      socket.off("room-created");
       socket.off("start-duel");
       socket.off("duel-result");
       socket.off("start-gk-duel");
@@ -199,8 +189,6 @@ export default function App() {
     } else if (roomId) {
       socket.emit("join-room", { roomId, playerName: finalName, gameMode, preferredTeam });
     }
-
-    setShowMenu(false);
   };
 
   const handleSelectMode = (mode: GameMode) => {
@@ -214,40 +202,17 @@ export default function App() {
 
     if (mode === "11vs11") {
       setSelectedTeam("RED");
-      setRoomCode("");
     }
   };
 
-  const handleCreateModeRoom = () => {
-    if (selectedMode !== "11vs11") return;
-    const finalName = playerName.trim() || "Player";
-    localStorage.setItem("playerName", finalName);
-    socket.emit("set-player-profile", { playerName: finalName });
-
-    const roomId = roomCode.trim() || `${selectedMode.toLowerCase()}-${Date.now()}`;
-    setRoomCode(roomId);
-    setCreatedRoomIds((prev) => (prev.includes(roomId) ? prev : [...prev, roomId]));
-    setShowCreatedRoomsList(true);
-
-    // autoJoin=false: chi tao phong, khong vao game ngay.
-    socket.emit("create-room", {
-      roomId,
-      playerName: finalName,
-      gameMode: selectedMode,
-      preferredTeam: selectedTeam,
-      autoJoin: false
-    });
-  };
-
-  const handleJoinAnyRoom = () => {
+  const handleJoinFixedRoom = () => {
     if (selectedMode !== "11vs11") return;
     const finalName = playerName.trim() || "Player";
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
     pendingNoticeRef.current = "Vao phong thanh cong!";
-    socket.emit("join-any-room", { gameMode: "11vs11", playerName: finalName, preferredTeam: selectedTeam });
-    setShowMenu(false);
+    socket.emit("join-fixed-11vs11", { playerName: finalName, preferredTeam: selectedTeam });
   };
 
   const handleCreatePracticeRoom = () => {
@@ -260,7 +225,6 @@ export default function App() {
       teammates: Math.max(0, Math.min(10, practiceTeammates)),
       opponents: Math.max(1, Math.min(11, practiceOpponents))
     });
-    setShowMenu(false);
   };
 
   const handleExit = () => {
@@ -300,24 +264,15 @@ export default function App() {
           playerName={playerName}
           selectedMode={selectedMode}
           selectedTeam={selectedTeam}
-          roomCode={roomCode}
           practiceTeammates={practiceTeammates}
           practiceOpponents={practiceOpponents}
           onPlayerNameChange={setPlayerName}
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
-          onRoomCodeChange={(value) => setRoomCode(value)}
           onPracticeTeammatesChange={(value) => setPracticeTeammates(Number.isFinite(value) ? value : 0)}
           onPracticeOpponentsChange={(value) => setPracticeOpponents(Number.isFinite(value) ? value : 1)}
           onCreatePracticeRoom={handleCreatePracticeRoom}
-          onCreateModeRoom={handleCreateModeRoom}
-          onJoinAnyRoom={handleJoinAnyRoom}
-          showCreatedRoomsList={showCreatedRoomsList}
-          createdRooms={createdRooms}
-          onJoinCreatedRoom={(roomId) => {
-            if (!selectedMode) return;
-            startSession("join-room", selectedMode, roomId, selectedTeam);
-          }}
+          onJoinFixedRoom={handleJoinFixedRoom}
           onExit={handleExit}
         />
       ) : (

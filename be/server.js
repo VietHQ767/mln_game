@@ -30,6 +30,8 @@ const io = new Server(server, {
 // Render tu dong gan PORT; local mac dinh 3000.
 const PORT = Number(process.env.PORT) || 3000;
 const TICK_RATE = 30;
+// 11 vs 11 su dung 1 phong duy nhat.
+const FIXED_11VS11_ROOM_ID = "11vs11-room";
 const FIELD_WIDTH = 800;
 const FIELD_HEIGHT = 500;
 const FIELD_MARGIN = 20;
@@ -1460,6 +1462,18 @@ io.on("connection", (socket) => {
     const chosen = candidates[0].room;
     const profileName = socketProfiles.get(socket.id)?.playerName;
     joinRoom(socket, chosen.id, playerName || profileName, preferredTeam);
+  });
+
+  // 11vs11: vao phong co dinh duy nhat.
+  socket.on("join-fixed-11vs11", ({ playerName, preferredTeam }) => {
+    const roomId = FIXED_11VS11_ROOM_ID;
+    if (!rooms.has(roomId)) {
+      const newRoom = createEmptyRoom(roomId, "Phong 11 vs 11");
+      newRoom.gameMode = "11vs11";
+      rooms.set(roomId, newRoom);
+    }
+    const profileName = socketProfiles.get(socket.id)?.playerName;
+    joinRoom(socket, roomId, playerName || profileName, preferredTeam);
   });
 
   // Frontend moi yeu cau su dung su kien move.
