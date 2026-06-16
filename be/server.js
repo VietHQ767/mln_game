@@ -1730,6 +1730,24 @@ function normalizeFixed4vs4Room(room) {
   });
 }
 
+function ensureFixed4vs4Room() {
+  const roomId = FIXED_4VS4_ROOM_ID;
+  if (!rooms.has(roomId)) {
+    const newRoom = createEmptyRoom(roomId, "Phong 4 vs 4");
+    newRoom.gameMode = "4vs4";
+    rooms.set(roomId, newRoom);
+  } else {
+    normalizeFixed4vs4Room(rooms.get(roomId));
+  }
+  return rooms.get(roomId);
+}
+
+function handleJoinFixed4vs4(socket, { playerName, preferredTeam }) {
+  ensureFixed4vs4Room();
+  const profileName = socketProfiles.get(socket.id)?.playerName;
+  joinRoom(socket, FIXED_4VS4_ROOM_ID, playerName || profileName, preferredTeam);
+}
+
 function joinRoom(socket, roomId, playerName, preferredTeam) {
   const room = rooms.get(roomId);
   if (!room) {
@@ -1757,7 +1775,7 @@ function joinRoom(socket, roomId, playerName, preferredTeam) {
   } else {
     // 4vs4: nguoi choi tu chon doi; doi day thi chi cho phep doi con lai.
     if (Object.keys(room.players).length >= MAX_PLAYERS) {
-      socket.emit("room-full", { message: "Phong da du 22 nguoi choi." });
+      socket.emit("room-full", { message: `Phong da du ${MAX_PLAYERS} nguoi choi.` });
       return;
     }
     const resolved = resolvePreferredTeam(room, preferredTeam);
@@ -1825,7 +1843,8 @@ io.on("connection", (socket) => {
 
   socket.on("request-room-info", ({ roomId }) => {
     const normalizedId = String(roomId || "").trim();
-    const room = rooms.get(normalizedId);
+    const isFixedRoom = normalizedId === FIXED_4VS4_ROOM_ID || normalizedId === "11vs11-room";
+    const room = isFixedRoom ? ensureFixed4vs4Room() : rooms.get(normalizedId);
     if (!room) {
       socket.emit("room-info", { exists: false, roomId: normalizedId });
       return;
@@ -1936,18 +1955,9 @@ io.on("connection", (socket) => {
   });
 
   // 4vs4: vao phong co dinh duy nhat.
-  socket.on("join-fixed-4vs4", ({ playerName, preferredTeam }) => {
-    const roomId = FIXED_4VS4_ROOM_ID;
-    if (!rooms.has(roomId)) {
-      const newRoom = createEmptyRoom(roomId, "Phong 4 vs 4");
-      newRoom.gameMode = "4vs4";
-      rooms.set(roomId, newRoom);
-    } else {
-      normalizeFixed4vs4Room(rooms.get(roomId));
-    }
-    const profileName = socketProfiles.get(socket.id)?.playerName;
-    joinRoom(socket, roomId, playerName || profileName, preferredTeam);
-  });
+  socket.on("join-fixed-4vs4", handleJoinFixed4vs4);
+  // Tuong thich frontend/backend cu.
+  socket.on("join-fixed-11vs11", handleJoinFixed4vs4);
 
   // Frontend moi yeu cau su dung su kien move.
   socket.on("move", (inputState) => {

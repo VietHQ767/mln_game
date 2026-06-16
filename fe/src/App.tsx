@@ -42,14 +42,15 @@ const initialGameState: GameState = {
 export default function App() {
   const [showMenu, setShowMenu] = useState(true);
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
-  const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
+  const [selectedMode, setSelectedMode] = useState<GameMode | null>("4vs4");
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
   const pendingNoticeRef = useRef<string | null>(null);
+  const joinTimeoutRef = useRef<number | null>(null);
   const [teamAvailability, setTeamAvailability] = useState({
     exists: false,
     redCount: 0,
     blueCount: 0,
-    maxTeamSize: 11,
+    maxTeamSize: 4,
     redFull: false,
     blueFull: false
   });
@@ -113,13 +114,17 @@ export default function App() {
         exists: true,
         redCount: payload.redCount ?? 0,
         blueCount: payload.blueCount ?? 0,
-        maxTeamSize: payload.maxTeamSize ?? 11,
+        maxTeamSize: payload.maxTeamSize ?? 4,
         redFull: Boolean(payload.redFull),
         blueFull: Boolean(payload.blueFull)
       });
     });
 
     socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
+      if (joinTimeoutRef.current) {
+        window.clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
       setGameState({ ...payload, myId: payload.myId });
       // Chi an menu khi server xac nhan vao phong thanh cong.
       setShowMenu(false);
@@ -248,12 +253,29 @@ export default function App() {
   };
 
   const handleJoinFixedRoom = () => {
-    if (selectedMode !== "4vs4") return;
+    if (selectedMode !== "4vs4") {
+      alert("Hay chon che do 4 vs 4 truoc khi vao phong.");
+      return;
+    }
+    if (!socket.connected) {
+      alert(`Chua ket noi server (${SOCKET_URL}). Kiem tra backend dang chay.`);
+      return;
+    }
     const finalName = playerName.trim() || "Player";
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
     pendingNoticeRef.current = "Vao phong thanh cong!";
+    if (joinTimeoutRef.current) {
+      window.clearTimeout(joinTimeoutRef.current);
+    }
+    joinTimeoutRef.current = window.setTimeout(() => {
+      joinTimeoutRef.current = null;
+      alert(
+        "Khong nhan phan hoi tu server khi vao phong. Hay restart backend (npm run dev trong be/) hoac doi deploy backend moi."
+      );
+      setShowMenu(true);
+    }, 8000);
     socket.emit("join-fixed-4vs4", { playerName: finalName, preferredTeam: selectedTeam });
   };
 
