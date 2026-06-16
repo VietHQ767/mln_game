@@ -1423,8 +1423,8 @@ function updateRoom(room) {
       resolveDuelOutcome(room, "timeout");
     }
   } else if (room.match.setPiece) {
-    // Bong chet: chi cho phep cau thu thuc hien da phat di chuyen.
-    const takerId = room.match.setPiece.takerId;
+    const setPiece = room.match.setPiece;
+    const takerId = setPiece.takerId;
     Object.values(room.players).forEach((player) => {
       if (player.id !== takerId) {
         player.input = { up: false, down: false, left: false, right: false };
@@ -1432,15 +1432,22 @@ function updateRoom(room) {
     });
     if (takerId && room.players[takerId]) {
       const taker = room.players[takerId];
-      if (taker.isBot) {
+      if (setPiece.type === "THROW_IN") {
+        taker.input = { up: false, down: false, left: false, right: false };
+        placeSetPieceTaker(taker, "THROW_IN", setPiece.spot);
+        if (room.ballHolderId !== taker.id) {
+          room.ballHolderId = taker.id;
+        }
+        updateBallToHolder(room);
+        if (taker.isBot) {
+          botExecuteSetPiece(room);
+        }
+      } else if (taker.isBot) {
         updateBotAI(room, taker);
         botExecuteSetPiece(room);
       } else {
         updatePlayerMovement(taker);
       }
-    }
-    if (room.match.setPiece?.type === "THROW_IN" && room.ballHolderId) {
-      updateBallToHolder(room);
     }
   }
 
@@ -1765,6 +1772,11 @@ io.on("connection", (socket) => {
     const player = room.players[socket.id];
     if (!player) return;
 
+    if (room.match.setPiece?.type === "THROW_IN" && room.match.setPiece.takerId === socket.id) {
+      player.input = { up: false, down: false, left: false, right: false };
+      return;
+    }
+
     if (room.match.phase !== "PLAYING") {
       const setPiece = room.match.setPiece;
       if (!setPiece || setPiece.takerId !== socket.id) return;
@@ -1787,6 +1799,12 @@ io.on("connection", (socket) => {
     if (!room) return;
     const player = room.players[socket.id];
     if (!player) return;
+
+    if (room.match.setPiece?.type === "THROW_IN" && room.match.setPiece.takerId === socket.id) {
+      player.input = { up: false, down: false, left: false, right: false };
+      return;
+    }
+
     if (room.match.phase !== "PLAYING") {
       const setPiece = room.match.setPiece;
       if (!setPiece || setPiece.takerId !== socket.id) return;
