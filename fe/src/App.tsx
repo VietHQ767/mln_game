@@ -10,14 +10,16 @@ import type { DuelPayload, GKDuelPayload, GameState } from "./types";
 type GameMode = "1vsBot" | "11vs11" | "Practice";
 type TeamChoice = "RED" | "BLUE";
 
-// URL backend: local mac dinh, production lay tu Vercel env VITE_SOCKET_URL.
-// Tu dong bo qua gia tri placeholder de tranh frontend ket noi sai server.
-const rawSocketUrl = String(import.meta.env.VITE_SOCKET_URL || "").trim();
-const isPlaceholderSocketUrl =
-  rawSocketUrl.length === 0 ||
-  rawSocketUrl.includes("your-backend.onrender.com") ||
-  rawSocketUrl.includes("your-app.vercel.app");
-const SOCKET_URL = isPlaceholderSocketUrl ? "http://localhost:3000" : rawSocketUrl;
+// URL backend: production lay tu Vercel env VITE_BACKEND_URL, local mac dinh localhost:3000.
+const LOCAL_BACKEND_URL = "http://localhost:3000";
+const rawBackendUrl = String(
+  import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_SOCKET_URL || ""
+).trim();
+const isPlaceholderBackendUrl =
+  rawBackendUrl.length === 0 ||
+  rawBackendUrl.includes("your-backend.onrender.com") ||
+  rawBackendUrl.includes("your-app.vercel.app");
+const SOCKET_URL = isPlaceholderBackendUrl ? LOCAL_BACKEND_URL : rawBackendUrl;
 
 const socket: Socket = io(SOCKET_URL, {
   autoConnect: true,
