@@ -236,7 +236,8 @@ function getRoomListPayload() {
     name: room.name,
     gameMode: room.gameMode,
     players: Object.keys(room.players).length,
-    capacity: MAX_PLAYERS
+    capacity: MAX_PLAYERS,
+    ...getTeamAvailability(room)
   }));
 }
 
@@ -262,6 +263,19 @@ function getTeamCount(room, team) {
   return Object.values(room.players).filter((player) => player.team === team).length;
 }
 
+// Thong tin slot tung doi trong phong (dung cho UI chon doi).
+function getTeamAvailability(room) {
+  const redCount = getTeamCount(room, TEAM_RED);
+  const blueCount = getTeamCount(room, TEAM_BLUE);
+  return {
+    redCount,
+    blueCount,
+    maxTeamSize: MAX_TEAM_SIZE,
+    redFull: redCount >= MAX_TEAM_SIZE,
+    blueFull: blueCount >= MAX_TEAM_SIZE
+  };
+}
+
 function pickTeamForRoom(room) {
   const redCount = getTeamCount(room, TEAM_RED);
   const blueCount = getTeamCount(room, TEAM_BLUE);
@@ -274,6 +288,27 @@ function pickTeamForRoom(room) {
     return TEAM_RED;
   }
   return TEAM_BLUE;
+}
+
+// Xu ly doi nguoi choi chon; neu doi do day thi van cho phep chon doi con lai.
+function resolvePreferredTeam(room, preferredTeam) {
+  const { redFull, blueFull } = getTeamAvailability(room);
+
+  if (preferredTeam === TEAM_RED || preferredTeam === TEAM_BLUE) {
+    if (preferredTeam === TEAM_RED && redFull) {
+      return { team: null, error: "Doi Do da day (11/11)." };
+    }
+    if (preferredTeam === TEAM_BLUE && blueFull) {
+      return { team: null, error: "Doi Xanh da day (11/11)." };
+    }
+    return { team: preferredTeam, error: null };
+  }
+
+  const team = pickTeamForRoom(room);
+  if (!team) {
+    return { team: null, error: "Ca 2 doi trong phong da day." };
+  }
+  return { team, error: null };
 }
 
 function spawnForTeam(team) {
@@ -1227,7 +1262,7 @@ function removePlayerFromRoom(socketId) {
   emitRoomListToAll();
 }
 
-function joinRoom(socket, roomId, playerName) {
+function joinRoom(socket, roomId, playerName, preferredTeam) {
   const room = rooms.get(roomId);
   if (!room) {
     socket.emit("room-error", { message: "Phong khong ton tai." });
@@ -1252,16 +1287,17 @@ function joinRoom(socket, roomId, playerName) {
     }
     team = TEAM_RED;
   } else {
-    // 11vs11: doi hinh nguoi choi can bang tu dong toi da 11 moi ben.
+    // 11vs11: nguoi choi tu chon doi; doi day thi chi cho phep doi con lai.
     if (Object.keys(room.players).length >= MAX_PLAYERS) {
       socket.emit("room-full", { message: "Phong da du 22 nguoi choi." });
       return;
     }
-    team = pickTeamForRoom(room);
-    if (!team) {
-      socket.emit("room-full", { message: "Ca 2 doi trong phong da day." });
+    const resolved = resolvePreferredTeam(room, preferredTeam);
+    if (!resolved.team) {
+      socket.emit("room-full", { message: resolved.error });
       return;
     }
+    team = resolved.team;
   }
 
   removePlayerFromRoom(socket.id);
@@ -1317,7 +1353,25 @@ io.on("connection", (socket) => {
     socket.emit("room-list", getRoomListPayload());
   });
 
-  socket.on("create-room", ({ roomId, playerName, gameMode }) => {
+  socket.on("request-room-info", ({ roomId }) => {
+    const normalizedId = String(roomId || "").trim();
+    const room = rooms.get(normalizedId);
+    if (!room) {
+      socket.emit("room-info", { exists: false, roomId: normalizedId });
+      return;
+    }
+    socket.emit("room-info", {
+      exists: true,
+      roomId: room.id,
+      name: room.name,
+      gameMode: room.gameMode,
+      players: Object.keys(room.players).length,
+      capacity: MAX_PLAYERS,
+      ...getTeamAvailability(room)
+    });
+  });
+
+  socket.on("create-room", ({ roomId, playerName, gameMode, preferredTeam }) => {
     const finalRoomId =
       String(roomId || "").trim() || `room-${Date.now()}-${++roomCounter}`;
     const roomName = `Phong ${finalRoomId}`;
@@ -1338,7 +1392,7 @@ io.on("connection", (socket) => {
     }
 
     const profileName = socketProfiles.get(socket.id)?.playerName;
-    joinRoom(socket, finalRoomId, playerName || profileName);
+    joinRoom(socket, finalRoomId, playerName || profileName, preferredTeam);
   });
 
   socket.on("create-practice-room", ({ playerName, teammates, opponents }) => {
@@ -1356,9 +1410,9 @@ io.on("connection", (socket) => {
     joinRoom(socket, finalRoomId, playerName || profileName);
   });
 
-  socket.on("join-room", ({ roomId, playerName }) => {
+  socket.on("join-room", ({ roomId, playerName, preferredTeam }) => {
     const profileName = socketProfiles.get(socket.id)?.playerName;
-    joinRoom(socket, String(roomId || "").trim(), playerName || profileName);
+    joinRoom(socket, String(roomId || "").trim(), playerName || profileName, preferredTeam);
   });
 
   // Frontend moi yeu cau su dung su kien move.

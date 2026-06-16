@@ -5,9 +5,10 @@ import MainMenu from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
 import GKQuizModal from "./components/GKQuizModal";
-import type { DuelPayload, GKDuelPayload, GameState, Room } from "./types";
+import type { DuelPayload, GKDuelPayload, GameState, Room, RoomInfo } from "./types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
+type TeamChoice = "RED" | "BLUE";
 
 // URL backend: local mac dinh, production lay tu Vercel env VITE_SOCKET_URL.
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3000";
@@ -38,6 +39,8 @@ export default function App() {
     { id: "room-2", name: "Phong Lop B", players: 0, capacity: 22 }
   ]);
   const [showRoomList, setShowRoomList] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
+  const [roomTeamInfo, setRoomTeamInfo] = useState<Pick<RoomInfo, "redCount" | "blueCount" | "maxTeamSize" | "redFull" | "blueFull"> | null>(null);
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [duelData, setDuelData] = useState<DuelPayload | null>(null);
   const [gkDuelData, setGkDuelData] = useState<GKDuelPayload | null>(null);
@@ -81,6 +84,29 @@ export default function App() {
         setRooms(roomData);
       }
     });
+    socket.on("room-info", (info: RoomInfo) => {
+      if (!info.exists) {
+        setRoomTeamInfo(null);
+        return;
+      }
+      const nextInfo = {
+        redCount: info.redCount ?? 0,
+        blueCount: info.blueCount ?? 0,
+        maxTeamSize: info.maxTeamSize ?? 11,
+        redFull: info.redFull ?? false,
+        blueFull: info.blueFull ?? false
+      };
+      setRoomTeamInfo(nextInfo);
+      // Tu dong chuyen sang doi con slot neu doi dang chon da day.
+      if (nextInfo.redFull && !nextInfo.blueFull) {
+        setSelectedTeam("BLUE");
+      } else if (nextInfo.blueFull && !nextInfo.redFull) {
+        setSelectedTeam("RED");
+      }
+    });
+    socket.on("room-error", (payload: { message?: string }) => {
+      if (payload?.message) alert(payload.message);
+    });
     socket.on("start-duel", (payload: DuelPayload) => {
       setDuelData(payload);
       setHasAnswered(false);
@@ -109,6 +135,8 @@ export default function App() {
       socket.off("init");
       socket.off("gameState");
       socket.off("room-list");
+      socket.off("room-info");
+      socket.off("room-error");
       socket.off("start-duel");
       socket.off("duel-result");
       socket.off("start-gk-duel");
@@ -163,23 +191,40 @@ export default function App() {
     };
   }, [keyMap, showMenu]);
 
-  const startSession = (mode: "create-room" | "join-room", gameMode: GameMode, roomId?: string) => {
+  const startSession = (
+    mode: "create-room" | "join-room",
+    gameMode: GameMode,
+    roomId?: string,
+    team?: TeamChoice
+  ) => {
     const finalName = playerName.trim() || "Player";
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
+
+    const preferredTeam = gameMode === "11vs11" ? team ?? selectedTeam : undefined;
 
     if (mode === "create-room") {
       const generatedRoomId = roomId || `${gameMode.toLowerCase()}-${Date.now()}`;
       socket.emit("create-room", {
         roomId: generatedRoomId,
         playerName: finalName,
-        gameMode
+        gameMode,
+        preferredTeam
       });
     } else if (roomId) {
-      socket.emit("join-room", { roomId, playerName: finalName, gameMode });
+      socket.emit("join-room", { roomId, playerName: finalName, gameMode, preferredTeam });
     }
 
     setShowMenu(false);
+  };
+
+  const requestRoomTeamInfo = (roomId: string) => {
+    const trimmed = roomId.trim();
+    if (!trimmed) {
+      setRoomTeamInfo(null);
+      return;
+    }
+    socket.emit("request-room-info", { roomId: trimmed });
   };
 
   const handleSelectMode = (mode: GameMode) => {
@@ -191,14 +236,27 @@ export default function App() {
       return;
     }
 
+    if (mode === "11vs11") {
+      setSelectedTeam("RED");
+      setRoomTeamInfo(null);
+    }
+
     socket.emit("request-room-list");
   };
 
   const handleCreateModeRoom = () => {
     if (selectedMode !== "11vs11") return;
+    if (roomTeamInfo?.redFull && selectedTeam === "RED") {
+      alert("Doi Do da day. Hay chon Doi Xanh.");
+      return;
+    }
+    if (roomTeamInfo?.blueFull && selectedTeam === "BLUE") {
+      alert("Doi Xanh da day. Hay chon Doi Do.");
+      return;
+    }
     const roomId = roomCode.trim() || `${selectedMode.toLowerCase()}-${Date.now()}`;
     setRoomCode(roomId);
-    startSession("create-room", selectedMode, roomId);
+    startSession("create-room", selectedMode, roomId, selectedTeam);
   };
 
   const handleCreatePracticeRoom = () => {
@@ -220,7 +278,15 @@ export default function App() {
       alert("Vui long nhap ma phong.");
       return;
     }
-    startSession("join-room", selectedMode, roomCode.trim());
+    if (roomTeamInfo?.redFull && selectedTeam === "RED") {
+      alert("Doi Do da day. Hay chon Doi Xanh.");
+      return;
+    }
+    if (roomTeamInfo?.blueFull && selectedTeam === "BLUE") {
+      alert("Doi Xanh da day. Hay chon Doi Do.");
+      return;
+    }
+    startSession("join-room", selectedMode, roomCode.trim(), selectedTeam);
   };
 
   const handleExit = () => {
@@ -259,6 +325,8 @@ export default function App() {
         <MainMenu
           playerName={playerName}
           selectedMode={selectedMode}
+          selectedTeam={selectedTeam}
+          roomTeamInfo={roomTeamInfo}
           roomCode={roomCode}
           practiceTeammates={practiceTeammates}
           practiceOpponents={practiceOpponents}
@@ -266,7 +334,11 @@ export default function App() {
           showRoomList={showRoomList}
           onPlayerNameChange={setPlayerName}
           onSelectMode={handleSelectMode}
-          onRoomCodeChange={setRoomCode}
+          onSelectTeam={setSelectedTeam}
+          onRoomCodeChange={(value) => {
+            setRoomCode(value);
+            requestRoomTeamInfo(value);
+          }}
           onPracticeTeammatesChange={(value) => setPracticeTeammates(Number.isFinite(value) ? value : 0)}
           onPracticeOpponentsChange={(value) => setPracticeOpponents(Number.isFinite(value) ? value : 1)}
           onCreatePracticeRoom={handleCreatePracticeRoom}
@@ -276,9 +348,25 @@ export default function App() {
             socket.emit("request-room-list");
             setShowRoomList((prev) => !prev);
           }}
-          onJoinRoom={(roomId) => {
+          onJoinRoom={(room) => {
             const modeToUse = selectedMode === "1vsBot" || !selectedMode ? "11vs11" : selectedMode;
-            startSession("join-room", modeToUse, roomId);
+            setRoomCode(room.id);
+            setRoomTeamInfo({
+              redCount: room.redCount ?? 0,
+              blueCount: room.blueCount ?? 0,
+              maxTeamSize: room.maxTeamSize ?? 11,
+              redFull: room.redFull ?? false,
+              blueFull: room.blueFull ?? false
+            });
+            if (room.redFull && selectedTeam === "RED") {
+              alert("Doi Do da day. Hay chon Doi Xanh.");
+              return;
+            }
+            if (room.blueFull && selectedTeam === "BLUE") {
+              alert("Doi Xanh da day. Hay chon Doi Do.");
+              return;
+            }
+            startSession("join-room", modeToUse, room.id, selectedTeam);
           }}
           onExit={handleExit}
         />

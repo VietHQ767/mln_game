@@ -59,6 +59,17 @@ export interface Room {
   name: string;
   players: number;
   capacity: number;
+  gameMode?: string;
+  redCount?: number;
+  blueCount?: number;
+  maxTeamSize?: number;
+  redFull?: boolean;
+  blueFull?: boolean;
+}
+
+export interface RoomInfo extends Room {
+  exists: boolean;
+  roomId: string;
 }
 
 export interface GameState {

@@ -2,10 +2,21 @@ import { DoorClosed, Dumbbell, List, Swords, UserRound, Zap } from "lucide-react
 import type { Room } from "../types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
+type TeamChoice = "RED" | "BLUE";
+
+interface TeamInfo {
+  redCount?: number;
+  blueCount?: number;
+  maxTeamSize?: number;
+  redFull?: boolean;
+  blueFull?: boolean;
+}
 
 interface MainMenuProps {
   playerName: string;
   selectedMode: GameMode | null;
+  selectedTeam: TeamChoice;
+  roomTeamInfo: TeamInfo | null;
   roomCode: string;
   practiceTeammates: number;
   practiceOpponents: number;
@@ -13,6 +24,7 @@ interface MainMenuProps {
   showRoomList: boolean;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
+  onSelectTeam: (team: TeamChoice) => void;
   onRoomCodeChange: (value: string) => void;
   onPracticeTeammatesChange: (value: number) => void;
   onPracticeOpponentsChange: (value: number) => void;
@@ -20,13 +32,15 @@ interface MainMenuProps {
   onCreateModeRoom: () => void;
   onJoinByCode: () => void;
   onToggleRoomList: () => void;
-  onJoinRoom: (roomId: string) => void;
+  onJoinRoom: (room: Room) => void;
   onExit: () => void;
 }
 
 export default function MainMenu({
   playerName,
   selectedMode,
+  selectedTeam,
+  roomTeamInfo,
   roomCode,
   practiceTeammates,
   practiceOpponents,
@@ -34,6 +48,7 @@ export default function MainMenu({
   showRoomList,
   onPlayerNameChange,
   onSelectMode,
+  onSelectTeam,
   onRoomCodeChange,
   onPracticeTeammatesChange,
   onPracticeOpponentsChange,
@@ -46,6 +61,11 @@ export default function MainMenu({
 }: MainMenuProps) {
   const showRoomTools = selectedMode === "11vs11";
   const showPracticeTools = selectedMode === "Practice";
+  const maxTeamSize = roomTeamInfo?.maxTeamSize ?? 11;
+  const redCount = roomTeamInfo?.redCount ?? 0;
+  const blueCount = roomTeamInfo?.blueCount ?? 0;
+  const redFull = roomTeamInfo?.redFull ?? false;
+  const blueFull = roomTeamInfo?.blueFull ?? false;
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/75 backdrop-blur-md">
@@ -109,6 +129,44 @@ export default function MainMenu({
 
         {showRoomTools && (
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
+            {/* Chon doi truoc khi tao/vao phong 11vs11 */}
+            <h3 className="mb-2 text-sm font-semibold text-slate-200">Chon doi</h3>
+            <div className="mb-3 grid gap-2 md:grid-cols-2">
+              <button
+                type="button"
+                disabled={redFull}
+                onClick={() => onSelectTeam("RED")}
+                className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                  selectedTeam === "RED"
+                    ? "border-red-300 bg-red-500/25 text-white"
+                    : "border-slate-600 bg-slate-800 text-slate-100 hover:border-red-300/70"
+                } ${redFull ? "cursor-not-allowed opacity-50" : ""}`}
+              >
+                <span className="font-bold text-red-300">Doi Do</span>
+                <span className="mt-1 block text-xs text-slate-300">
+                  {redCount}/{maxTeamSize} nguoi {redFull ? "(DAY)" : ""}
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={blueFull}
+                onClick={() => onSelectTeam("BLUE")}
+                className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                  selectedTeam === "BLUE"
+                    ? "border-blue-300 bg-blue-500/25 text-white"
+                    : "border-slate-600 bg-slate-800 text-slate-100 hover:border-blue-300/70"
+                } ${blueFull ? "cursor-not-allowed opacity-50" : ""}`}
+              >
+                <span className="font-bold text-blue-300">Doi Xanh</span>
+                <span className="mt-1 block text-xs text-slate-300">
+                  {blueCount}/{maxTeamSize} nguoi {blueFull ? "(DAY)" : ""}
+                </span>
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-400">
+              Neu mot doi da day, ban van co the chon doi con lai (toi da 11 nguoi/doi).
+            </p>
+
             {/* Che do 11vs11 su dung ma phong hoac danh sach phong de vao dung tran dau */}
             <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
               <input
@@ -146,10 +204,14 @@ export default function MainMenu({
                 {rooms.map((room) => (
                   <button
                     key={room.id}
-                    onClick={() => onJoinRoom(room.id)}
+                    onClick={() => onJoinRoom(room)}
                     className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-left text-sm text-slate-100 transition hover:border-sky-400"
                   >
-                    {room.name} - {room.players}/{room.capacity}
+                    <div className="font-medium">{room.name}</div>
+                    <div className="text-xs text-slate-300">
+                      {room.players}/{room.capacity} nguoi | Do: {room.redCount ?? 0}/11 | Xanh:{" "}
+                      {room.blueCount ?? 0}/11
+                    </div>
                   </button>
                 ))}
               </div>
