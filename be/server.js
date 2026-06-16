@@ -390,6 +390,28 @@ function resolvePreferredTeam(room, preferredTeam) {
   return { team, error: null };
 }
 
+function setPlayerHomePosition(player) {
+  player.homeX = player.x;
+  player.homeY = player.y;
+}
+
+function resetPlayersToHomePositions(room) {
+  Object.values(room.players).forEach((player) => {
+    if (player.homeX == null || player.homeY == null) {
+      const spawn = spawnForTeam(player.team);
+      player.homeX = spawn.x;
+      player.homeY = spawn.y;
+    }
+
+    player.x = player.homeX;
+    player.y = player.homeY;
+    player.input = { up: false, down: false, left: false, right: false };
+    player.frozenUntil = 0;
+    player.direction = { dx: player.team === TEAM_RED ? 1 : -1, dy: 0 };
+    applyMovementBounds(player);
+  });
+}
+
 function spawnForTeam(team) {
   if (team === TEAM_RED) {
     return {
@@ -426,7 +448,9 @@ function createPlayer(socketId, room, team, preferredName) {
     },
     isBot: false,
     energy: ENERGY_MAX,
-    frozenUntil: 0
+    frozenUntil: 0,
+    homeX: spawn.x,
+    homeY: spawn.y
   };
 }
 
@@ -452,7 +476,9 @@ function createBotPlayer(room, team = TEAM_BLUE) {
     },
     isBot: true,
     energy: ENERGY_MAX,
-    frozenUntil: 0
+    frozenUntil: 0,
+    homeX: spawn.x,
+    homeY: spawn.y
   };
 }
 
@@ -487,7 +513,9 @@ function createBossRaidBots(room) {
       isBot: true,
       role: botData.role,
       energy: ENERGY_MAX,
-      frozenUntil: 0
+      frozenUntil: 0,
+      homeX: botData.x,
+      homeY: botData.y
     };
     applyMovementBounds(bot);
     room.players[botData.id] = bot;
@@ -833,6 +861,9 @@ function getCornerKickSpot(exitOnLeft, outY) {
 
 function awardBallAfterGoal(room, scoredTeam) {
   const receivingTeam = getOpponentTeam(scoredTeam);
+
+  resetPlayersToHomePositions(room);
+
   const center = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2 };
   const receiver =
     getSetPieceTaker(room, receivingTeam, center) || getNearestPlayerInTeam(room, receivingTeam, center);
