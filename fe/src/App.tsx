@@ -9,8 +9,12 @@ import type { DuelPayload, GKDuelPayload, GameState, Room } from "./types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
 
-const socket: Socket = io("http://localhost:3000", {
-  autoConnect: true
+// URL backend: local mac dinh, production lay tu Vercel env VITE_SOCKET_URL.
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3000";
+
+const socket: Socket = io(SOCKET_URL, {
+  autoConnect: true,
+  transports: ["websocket", "polling"]
 });
 
 const initialGameState: GameState = {

@@ -3,10 +3,18 @@ const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
 
+// Danh sach origin duoc phep ket noi (local + URL Vercel tu bien moi truong).
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  ...(process.env.CLIENT_ORIGIN
+    ? process.env.CLIENT_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean)
+    : [])
+];
+
 const app = express();
 app.use(
   cors({
-    origin: "http://localhost:5173"
+    origin: ALLOWED_ORIGINS
   })
 );
 app.use(express.json());
@@ -14,12 +22,13 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"]
   }
 });
 
-const PORT = 3000;
+// Render tu dong gan PORT; local mac dinh 3000.
+const PORT = Number(process.env.PORT) || 3000;
 const TICK_RATE = 30;
 const FIELD_WIDTH = 800;
 const FIELD_HEIGHT = 500;
@@ -1555,13 +1564,14 @@ function gameLoop() {
 app.get("/", (_, res) => {
   res.json({
     message: "Backend multiplayer room-based dang chay",
-    originAllowed: "http://localhost:5173",
+    originAllowed: ALLOWED_ORIGINS,
     rooms: getRoomListPayload()
   });
 });
 
 setInterval(gameLoop, 1000 / TICK_RATE);
 
-server.listen(PORT, () => {
-  console.log(`Server dang chay tai http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server dang chay tai port ${PORT}`);
+  console.log(`CORS cho phep: ${ALLOWED_ORIGINS.join(", ")}`);
 });
