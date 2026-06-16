@@ -681,10 +681,81 @@ function getNearestPlayerInTeam(room, team, spot) {
   }, null);
 }
 
-function getRandomPlayerInTeam(room, team) {
-  const teamPlayers = Object.values(room.players).filter((player) => player.team === team);
-  if (teamPlayers.length === 0) return null;
-  return teamPlayers[Math.floor(Math.random() * teamPlayers.length)];
+function getSetPieceTaker(room, team, spot, type) {
+  let candidates = Object.values(room.players).filter((player) => player.team === team);
+  if (candidates.length === 0) return null;
+
+  if (type === "THROW_IN" || type === "CORNER_KICK") {
+    const fieldPlayers = candidates.filter((player) => player.role !== "GK");
+    if (fieldPlayers.length > 0) candidates = fieldPlayers;
+  }
+
+  // Uu tien nguoi choi that gan diem da phat; neu chi co bot thi chon bot gan nhat.
+  const humans = candidates.filter((player) => !player.isBot);
+  const pool = humans.length > 0 ? humans : candidates;
+
+  return pool.reduce((nearest, player) => {
+    if (!nearest) return player;
+    return getDistance(player, spot) < getDistance(nearest, spot) ? player : nearest;
+  }, null);
+}
+
+function finishSetPieceKick(room, taker, speed) {
+  room.match.notice = `${taker.team === TEAM_RED ? "Doi Do" : "Doi Xanh"} dua bong tro lai tran dau`;
+  room.match.phase = "PLAYING";
+  room.match.setPiece = null;
+  room.lastTouchTeam = taker.team;
+  room.lastTouchPlayerId = taker.id;
+}
+
+function botExecuteSetPiece(room) {
+  const setPiece = room.match.setPiece;
+  if (!setPiece) return;
+
+  const taker = room.players[setPiece.takerId];
+  if (!taker?.isBot) return;
+
+  const elapsed = Date.now() - (setPiece.startAt || 0);
+  if (elapsed < 700) return;
+
+  const { type, spot } = setPiece;
+  const goalCenterY = (GOAL_Y_MIN + GOAL_Y_MAX) / 2;
+
+  if (type === "THROW_IN") {
+    if (room.ballHolderId !== taker.id) {
+      room.ballHolderId = taker.id;
+      updateBallToHolder(room);
+    }
+    const inwardY = spot.y <= PLAY_MIN_Y + 1 ? spot.y + 130 : spot.y - 130;
+    const targetX = clamp(
+      taker.x + (taker.team === TEAM_RED ? 90 : -90),
+      PLAY_MIN_X + 40,
+      PLAY_MAX_X - 40
+    );
+    kickBallToward(room, targetX, inwardY, THROW_IN_SPEED, taker.team, taker.id);
+    finishSetPieceKick(room, taker, THROW_IN_SPEED);
+    return;
+  }
+
+  if (type === "CORNER_KICK") {
+    const goalX = taker.team === TEAM_RED ? PLAY_MAX_X : PLAY_MIN_X;
+    kickBallToward(room, goalX, goalCenterY, SHOOT_SPEED, taker.team, taker.id);
+    finishSetPieceKick(room, taker, SHOOT_SPEED);
+    return;
+  }
+
+  if (type === "GOAL_KICK") {
+    const dirX = taker.team === TEAM_RED ? 1 : -1;
+    kickBallToward(
+      room,
+      taker.x + dirX * 220,
+      goalCenterY,
+      BALL_FREE_SPEED,
+      taker.team,
+      taker.id
+    );
+    finishSetPieceKick(room, taker, BALL_FREE_SPEED);
+  }
 }
 
 function freezeAllInputs(room) {
@@ -699,11 +770,11 @@ function startSetPiece(room, type, awardedTeam, rawSpot, notice) {
     y: clamp(rawSpot.y, 0, FIELD_HEIGHT)
   };
 
-  // Nem bien va phat goc: random nguoi thuc hien trong doi duoc huong.
+  // Nem bien / phat goc: uu tien nguoi choi that gan diem da phat.
   // Phat bong len: van uu tien nguoi gan diem da phat.
   const taker =
     type === "THROW_IN" || type === "CORNER_KICK"
-      ? getRandomPlayerInTeam(room, awardedTeam)
+      ? getSetPieceTaker(room, awardedTeam, spot, type)
       : getNearestPlayerInTeam(room, awardedTeam, spot);
   const takerId = taker ? taker.id : null;
 
@@ -715,7 +786,8 @@ function startSetPiece(room, type, awardedTeam, rawSpot, notice) {
     type,
     team: awardedTeam,
     takerId,
-    spot
+    spot,
+    startAt: Date.now()
   };
 
   room.ballHolderId = null;
@@ -728,8 +800,21 @@ function startSetPiece(room, type, awardedTeam, rawSpot, notice) {
   freezeAllInputs(room);
 
   if (taker) {
-    taker.x = clamp(spot.x + (awardedTeam === TEAM_RED ? -18 : 18), taker.radius, FIELD_WIDTH - taker.radius);
-    taker.y = clamp(spot.y, taker.radius, FIELD_HEIGHT - taker.radius);
+    if (type === "THROW_IN") {
+      const onTopSideline = spot.y <= PLAY_MIN_Y + 1;
+      taker.x = clamp(spot.x, PLAY_MIN_X + taker.radius, PLAY_MAX_X - taker.radius);
+      taker.y = clamp(
+        onTopSideline ? PLAY_MIN_Y + taker.radius : PLAY_MAX_Y - taker.radius,
+        PLAY_MIN_Y + taker.radius,
+        PLAY_MAX_Y - taker.radius
+      );
+      taker.direction = { dx: 0, dy: onTopSideline ? 1 : -1 };
+      room.ballHolderId = taker.id;
+      updateBallToHolder(room);
+    } else {
+      taker.x = clamp(spot.x + (awardedTeam === TEAM_RED ? -18 : 18), taker.radius, FIELD_WIDTH - taker.radius);
+      taker.y = clamp(spot.y, taker.radius, FIELD_HEIGHT - taker.radius);
+    }
   }
 }
 
@@ -747,16 +832,13 @@ function startLiveBall(room, bySocketId, socket) {
   const dirX = taker.direction.dx || (taker.team === TEAM_RED ? 1 : -1);
   const dirY = taker.direction.dy || 0;
   const length = Math.hypot(dirX, dirY) || 1;
-  const restartSpeed = setPieceType === "THROW_IN" ? THROW_IN_SPEED : BALL_FREE_SPEED;
+  const restartSpeed =
+    setPieceType === "THROW_IN" ? THROW_IN_SPEED : setPieceType === "CORNER_KICK" ? SHOOT_SPEED : BALL_FREE_SPEED;
 
   room.ballHolderId = null;
   room.ball.vx = (dirX / length) * restartSpeed;
   room.ball.vy = (dirY / length) * restartSpeed;
-  room.lastTouchTeam = taker.team;
-  room.lastTouchPlayerId = taker.id;
-  room.match.notice = `${taker.team === TEAM_RED ? "Doi Do" : "Doi Xanh"} dua bong tro lai tran dau`;
-  room.match.phase = "PLAYING";
-  room.match.setPiece = null;
+  finishSetPieceKick(room, taker, restartSpeed);
 }
 
 function handleBoundaryChecks(room) {
@@ -1185,11 +1267,16 @@ function updateRoom(room) {
       }
     });
     if (takerId && room.players[takerId]) {
-      if (room.players[takerId].isBot) {
-        updateBotAI(room, room.players[takerId]);
+      const taker = room.players[takerId];
+      if (taker.isBot) {
+        updateBotAI(room, taker);
+        botExecuteSetPiece(room);
       } else {
-        updatePlayerMovement(room.players[takerId]);
+        updatePlayerMovement(taker);
       }
+    }
+    if (room.match.setPiece?.type === "THROW_IN" && room.ballHolderId) {
+      updateBallToHolder(room);
     }
   }
 
@@ -1558,15 +1645,10 @@ io.on("connection", (socket) => {
 
   socket.on("shoot-ball", ({ mouseX, mouseY }) => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room || room.match.phase !== "PLAYING") return;
-    if (room.ballHolderId !== socket.id) return;
+    if (!room) return;
 
     const shooter = room.players[socket.id];
     if (!shooter) return;
-    if (!consumeEnergy(shooter, SHOOT_ENERGY_COST)) {
-      emitActionDenied(socket, "Khong du energy de sut bong.");
-      return;
-    }
 
     const numericX = Number(mouseX);
     const numericY = Number(mouseY);
@@ -1574,6 +1656,38 @@ io.on("connection", (socket) => {
 
     const targetX = clamp(numericX, 0, FIELD_WIDTH);
     const targetY = clamp(numericY, 0, FIELD_HEIGHT);
+    const setPiece = room.match.setPiece;
+
+    if (setPiece && setPiece.takerId === socket.id) {
+      if (setPiece.type === "THROW_IN") {
+        if (room.ballHolderId !== socket.id) return;
+        if (!consumeEnergy(shooter, SET_PIECE_ENERGY_COST)) {
+          emitActionDenied(socket, "Khong du energy de nem bien.");
+          return;
+        }
+        kickBallToward(room, targetX, targetY, THROW_IN_SPEED, shooter.team, shooter.id);
+        finishSetPieceKick(room, shooter, THROW_IN_SPEED);
+        return;
+      }
+
+      if (setPiece.type === "CORNER_KICK") {
+        if (!consumeEnergy(shooter, SET_PIECE_ENERGY_COST)) {
+          emitActionDenied(socket, "Khong du energy de thuc hien phat goc.");
+          return;
+        }
+        kickBallToward(room, targetX, targetY, SHOOT_SPEED, shooter.team, shooter.id);
+        finishSetPieceKick(room, shooter, SHOOT_SPEED);
+        return;
+      }
+    }
+
+    if (room.match.phase !== "PLAYING") return;
+    if (room.ballHolderId !== socket.id) return;
+
+    if (!consumeEnergy(shooter, SHOOT_ENERGY_COST)) {
+      emitActionDenied(socket, "Khong du energy de sut bong.");
+      return;
+    }
 
     // Neu huong sut vao khung thanh doi thu -> kich hoat GK Duel.
     const towardBlueGoal = shooter.team === TEAM_RED && targetX > FIELD_WIDTH / 2 && targetY >= GOAL_Y_MIN && targetY <= GOAL_Y_MAX;

@@ -316,7 +316,15 @@ export default function App() {
 
   function handleShootBall(mouseX: number, mouseY: number) {
     if (!gameState.myId) return;
-    if (gameState.ballHolderId !== gameState.myId) return;
+    const isSetPieceTaker = gameState.match.setPiece?.takerId === gameState.myId;
+    const isCornerKick =
+      gameState.match.phase === "CORNER_KICK" && isSetPieceTaker;
+    const isThrowIn =
+      gameState.match.phase === "THROW_IN" &&
+      isSetPieceTaker &&
+      gameState.ballHolderId === gameState.myId;
+
+    if (!isCornerKick && !isThrowIn && gameState.ballHolderId !== gameState.myId) return;
     socket.emit("shoot-ball", { mouseX, mouseY });
   }
 
@@ -364,9 +372,13 @@ export default function App() {
                   : gameState.match.phase === "DUEL"
                     ? "Dang duel tranh chap bong"
                     : gameState.match.phase === "THROW_IN"
-                      ? "Dang nem bien - bam SPACE de dua bong vao"
+                      ? gameState.match.setPiece?.takerId === gameState.myId
+                        ? "Nem bien - click chuot de nem vao san (hoac SPACE)"
+                        : "Dang nem bien"
                       : gameState.match.phase === "CORNER_KICK"
-                        ? "Dang phat goc - bam SPACE de da"
+                        ? gameState.match.setPiece?.takerId === gameState.myId
+                          ? "Phat goc - click chuot de da (hoac SPACE)"
+                          : "Dang phat goc"
                         : "Dang phat bong len - bam SPACE de da")}
             </div>
             <QuizModal duelData={duelData} answered={hasAnswered} onSubmitAnswer={submitAnswer} />
