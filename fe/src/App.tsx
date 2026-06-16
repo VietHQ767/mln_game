@@ -192,7 +192,13 @@ export default function App() {
 
       if (event.code === "Space") {
         event.preventDefault();
-        socket.emit("kick-ball");
+        const isThrowInTaker =
+          gameState.match.phase === "THROW_IN" &&
+          gameState.match.setPiece?.takerId === gameState.myId &&
+          gameState.ballHolderId === gameState.myId;
+        if (!isThrowInTaker) {
+          socket.emit("kick-ball");
+        }
         return;
       }
 
@@ -231,7 +237,7 @@ export default function App() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [keyMap, showMenu]);
+  }, [keyMap, showMenu, gameState]);
 
   const handleSelectMode = (mode: GameMode) => {
     setSelectedMode(mode);
@@ -273,7 +279,9 @@ export default function App() {
       isSetPieceTaker &&
       gameState.ballHolderId === gameState.myId;
 
-    if (!isCornerKick && !isThrowIn) {
+    if (isThrowIn) return;
+
+    if (!isCornerKick) {
       if (gameState.match.phase !== "PLAYING") return;
       if (gameState.ballHolderId !== gameState.myId) return;
     }
@@ -282,7 +290,17 @@ export default function App() {
 
   function handlePassBall(targetPlayerId: string) {
     if (!gameState.myId) return;
-    if (gameState.ballHolderId !== gameState.myId) return;
+
+    const isThrowInTaker =
+      gameState.match.phase === "THROW_IN" &&
+      gameState.match.setPiece?.takerId === gameState.myId &&
+      gameState.ballHolderId === gameState.myId;
+
+    if (!isThrowInTaker) {
+      if (gameState.match.phase !== "PLAYING") return;
+      if (gameState.ballHolderId !== gameState.myId) return;
+    }
+
     socket.emit("pass-ball", { targetPlayerId });
   }
 
@@ -329,7 +347,7 @@ export default function App() {
                     ? "Dang duel tranh chap bong"
                     : gameState.match.phase === "THROW_IN"
                       ? gameState.match.setPiece?.takerId === gameState.myId
-                        ? "Nem bien - click chuot de nem vao san (hoac SPACE)"
+                        ? "Nem bien - click vao dong doi de chuyen bong"
                         : "Dang nem bien"
                       : gameState.match.phase === "CORNER_KICK"
                         ? gameState.match.setPiece?.takerId === gameState.myId

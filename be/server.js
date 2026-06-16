@@ -173,6 +173,32 @@ function getDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+function findTeammateNearPoint(room, team, exceptId, x, y, hitRadius = 42) {
+  return Object.values(room.players)
+    .filter((player) => player.team === team && player.id !== exceptId)
+    .reduce((nearest, player) => {
+      const distance = getDistance(player, { x, y });
+      if (distance > hitRadius + player.radius) return nearest;
+      if (!nearest || distance < getDistance(nearest, { x, y })) return player;
+      return nearest;
+    }, null);
+}
+
+function executeThrowInPass(room, taker, receiver, socket = null) {
+  if (!taker || !receiver) return false;
+  if (taker.team !== receiver.team || taker.id === receiver.id) return false;
+  if (room.match.setPiece?.type !== "THROW_IN" || room.match.setPiece.takerId !== taker.id) return false;
+  if (room.ballHolderId !== taker.id) return false;
+  if (!consumeEnergy(taker, SET_PIECE_ENERGY_COST)) {
+    if (socket) emitActionDenied(socket, "Khong du energy de nem bien.");
+    return false;
+  }
+
+  kickBallToward(room, receiver.x, receiver.y, THROW_IN_SPEED, taker.team, taker.id, receiver.id);
+  finishSetPieceKick(room, taker, THROW_IN_SPEED);
+  return true;
+}
+
 function pickRandomQuestion() {
   return questions[Math.floor(Math.random() * questions.length)];
 }
@@ -751,6 +777,15 @@ function getOpponentTeam(team) {
   return team === TEAM_RED ? TEAM_BLUE : TEAM_RED;
 }
 
+function getCornerKickSpot(exitOnLeft, outY) {
+  const goalCenterY = (GOAL_Y_MIN + GOAL_Y_MAX) / 2;
+  const useTopCorner = outY < goalCenterY;
+  return {
+    x: exitOnLeft ? PLAY_MIN_X : PLAY_MAX_X,
+    y: useTopCorner ? PLAY_MIN_Y : PLAY_MAX_Y
+  };
+}
+
 function getNearestPlayerInTeam(room, team, spot) {
   const teamPlayers = Object.values(room.players).filter((player) => player.team === team);
   if (teamPlayers.length === 0) return null;
@@ -800,14 +835,10 @@ function botExecuteSetPiece(room) {
       room.ballHolderId = taker.id;
       updateBallToHolder(room);
     }
-    const inwardY = spot.y <= PLAY_MIN_Y + 1 ? spot.y + 130 : spot.y - 130;
-    const targetX = clamp(
-      taker.x + (taker.team === TEAM_RED ? 90 : -90),
-      PLAY_MIN_X + 40,
-      PLAY_MAX_X - 40
-    );
-    kickBallToward(room, targetX, inwardY, THROW_IN_SPEED, taker.team, taker.id);
-    finishSetPieceKick(room, taker, THROW_IN_SPEED);
+    const inwardY = spot.y <= PLAY_MIN_Y + 1 ? spot.y + 120 : spot.y - 120;
+    const receiver = findTeammateNearPoint(room, taker.team, taker.id, taker.x, inwardY, 220);
+    if (!receiver) return;
+    executeThrowInPass(room, taker, receiver);
     return;
   }
 
@@ -919,6 +950,10 @@ function startLiveBall(room, bySocketId, socket) {
   const taker = room.players[bySocketId];
   if (!taker) return;
   const setPieceType = room.match.setPiece.type;
+  if (setPieceType === "THROW_IN") {
+    emitActionDenied(socket, "Nem bien chi duoc chuyen cho dong doi.");
+    return;
+  }
   if ((setPieceType === "THROW_IN" || setPieceType === "CORNER_KICK") && !consumeEnergy(taker, SET_PIECE_ENERGY_COST)) {
     emitActionDenied(socket, "Khong du energy de thuc hien tinh huong bong chet.");
     return;
@@ -989,33 +1024,21 @@ function handleBoundaryChecks(room) {
     const exitOnLeft = outX < PLAY_MIN_X;
     const attackingTeam = exitOnLeft ? TEAM_BLUE : TEAM_RED;
     const defendingTeam = getOpponentTeam(attackingTeam);
+    const cornerSpot = getCornerKickSpot(exitOnLeft, outY);
 
-    if (lastTouchTeam === defendingTeam) {
-      const awardedTeam = attackingTeam;
-      const cornerSpot = {
-        x: exitOnLeft ? PLAY_MIN_X : PLAY_MAX_X,
-        y: clamp(outY, PLAY_MIN_Y, PLAY_MAX_Y)
-      };
-      startSetPiece(
-        room,
-        "CORNER_KICK",
-        awardedTeam,
-        cornerSpot,
-        `${awardedTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} duoc huong phat goc!`
-      );
-    } else {
-      const awardedTeam = defendingTeam;
-      const goalKickSpot = {
-        x: exitOnLeft ? PLAY_MIN_X : PLAY_MAX_X,
-        y: clamp(outY, PLAY_MIN_Y, PLAY_MAX_Y)
-      };
-      awardGoalKick(
-        room,
-        awardedTeam,
-        goalKickSpot,
-        `${awardedTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} nhan bong phat bong len gan khung thanh!`
-      );
-    }
+    // Bong vuot bien ngang ngoai khung thanh:
+    // - Doi phong ngu cham cuoi => phat goc cho doi tan cong.
+    // - Doi tan cong cham cuoi (sut truot) => phat goc cho doi phong ngu.
+    const awardedTeam = lastTouchTeam === defendingTeam ? attackingTeam : defendingTeam;
+    const sideLabel = exitOnLeft ? "ben trai" : "ben phai";
+
+    startSetPiece(
+      room,
+      "CORNER_KICK",
+      awardedTeam,
+      cornerSpot,
+      `${awardedTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} duoc huong phat goc ${sideLabel}!`
+    );
   }
 }
 
@@ -1870,13 +1893,7 @@ io.on("connection", (socket) => {
 
     if (setPiece && setPiece.takerId === socket.id) {
       if (setPiece.type === "THROW_IN") {
-        if (room.ballHolderId !== socket.id) return;
-        if (!consumeEnergy(shooter, SET_PIECE_ENERGY_COST)) {
-          emitActionDenied(socket, "Khong du energy de nem bien.");
-          return;
-        }
-        kickBallToward(room, targetX, targetY, THROW_IN_SPEED, shooter.team, shooter.id);
-        finishSetPieceKick(room, shooter, THROW_IN_SPEED);
+        emitActionDenied(socket, "Nem bien chi duoc chuyen cho dong doi - click vao dong doi.");
         return;
       }
 
@@ -1907,13 +1924,27 @@ io.on("connection", (socket) => {
 
   socket.on("pass-ball", ({ targetPlayerId }) => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room || room.match.phase !== "PLAYING") return;
-    if (room.ballHolderId !== socket.id) return;
+    if (!room) return;
 
     const passer = room.players[socket.id];
+    if (!passer) return;
+
+    const isThrowInPass =
+      room.match.setPiece?.type === "THROW_IN" &&
+      room.match.setPiece.takerId === socket.id &&
+      room.ballHolderId === socket.id;
+
+    if (!isThrowInPass && room.match.phase !== "PLAYING") return;
+    if (room.ballHolderId !== socket.id) return;
+
     const receiver = room.players[targetPlayerId];
-    if (!passer || !receiver) return;
-    if (passer.team !== receiver.team) return;
+    if (!receiver || passer.team !== receiver.team) return;
+
+    if (isThrowInPass) {
+      executeThrowInPass(room, passer, receiver, socket);
+      return;
+    }
+
     if (!consumeEnergy(passer, PASS_ENERGY_COST)) {
       emitActionDenied(socket, "Khong du energy de chuyen bong.");
       return;

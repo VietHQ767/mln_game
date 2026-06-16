@@ -225,6 +225,36 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
     const mousePos = mapClientToField(event.clientX, event.clientY);
     if (!mousePos) return;
 
+    const isThrowInTaker =
+      gameState.match.phase === "THROW_IN" &&
+      gameState.match.setPiece?.takerId === gameState.myId &&
+      gameState.ballHolderId === gameState.myId;
+
+    const findTeammateAt = (x: number, y: number) => {
+      if (!gameState.myId) return null;
+      const myPlayer = gameState.players[gameState.myId];
+      if (!myPlayer) return null;
+
+      const teammates = Object.values(gameState.players).filter(
+        (player) => player.team === myPlayer.team && player.id !== myPlayer.id
+      );
+
+      return (
+        teammates.find((player) => {
+          const dx = x - player.x;
+          const dy = y - player.y;
+          return Math.hypot(dx, dy) < player.radius + 28;
+        }) ?? null
+      );
+    };
+
+    // Nem bien: chi chuyen cho dong doi.
+    if (isThrowInTaker && (event.button === 0 || event.button === 2)) {
+      const target = findTeammateAt(mousePos.x, mousePos.y);
+      if (target) onPassBall(target.id);
+      return;
+    }
+
     // Click trai: sut theo huong chuot.
     if (event.button === 0) {
       onShootBall(mousePos.x, mousePos.y);
@@ -232,23 +262,9 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
     }
 
     // Click phai: tim dong doi gan diem click de chuyen.
-    if (event.button === 2 && gameState.myId) {
-      const myPlayer = gameState.players[gameState.myId];
-      if (!myPlayer) return;
-
-      const teammates = Object.values(gameState.players).filter(
-        (player) => player.team === myPlayer.team && player.id !== myPlayer.id
-      );
-
-      const target = teammates.find((player) => {
-        const dx = mousePos.x - player.x;
-        const dy = mousePos.y - player.y;
-        return Math.hypot(dx, dy) < player.radius;
-      });
-
-      if (target) {
-        onPassBall(target.id);
-      }
+    if (event.button === 2) {
+      const target = findTeammateAt(mousePos.x, mousePos.y);
+      if (target) onPassBall(target.id);
     }
   }
 
