@@ -1,27 +1,18 @@
-import { DoorClosed, Dumbbell, List, Swords, UserRound, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { DoorClosed, Dumbbell, Swords, UserRound, Zap } from "lucide-react";
 import type { Room } from "../types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
 type TeamChoice = "RED" | "BLUE";
 
-interface TeamInfo {
-  redCount?: number;
-  blueCount?: number;
-  maxTeamSize?: number;
-  redFull?: boolean;
-  blueFull?: boolean;
-}
-
 interface MainMenuProps {
   playerName: string;
   selectedMode: GameMode | null;
   selectedTeam: TeamChoice;
-  roomTeamInfo: TeamInfo | null;
+  // Chi dung cho luong "Tao phong": nguoi dung nhap ma phong va bam Create.
   roomCode: string;
   practiceTeammates: number;
   practiceOpponents: number;
-  rooms: Room[];
-  showRoomList: boolean;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectTeam: (team: TeamChoice) => void;
@@ -30,9 +21,12 @@ interface MainMenuProps {
   onPracticeOpponentsChange: (value: number) => void;
   onCreatePracticeRoom: () => void;
   onCreateModeRoom: () => void;
-  onJoinByCode: () => void;
-  onToggleRoomList: () => void;
-  onJoinRoom: (room: Room) => void;
+  // 11vs11: vao phong tu dong, khong nhap ma phong.
+  onJoinAnyRoom: () => void;
+  // Danh sach phong da tao (chi hien sau khi nhan Create).
+  showCreatedRoomsList: boolean;
+  createdRooms: Room[];
+  onJoinCreatedRoom: (roomId: string) => void;
   onExit: () => void;
 }
 
@@ -40,12 +34,9 @@ export default function MainMenu({
   playerName,
   selectedMode,
   selectedTeam,
-  roomTeamInfo,
   roomCode,
   practiceTeammates,
   practiceOpponents,
-  rooms,
-  showRoomList,
   onPlayerNameChange,
   onSelectMode,
   onSelectTeam,
@@ -54,18 +45,19 @@ export default function MainMenu({
   onPracticeOpponentsChange,
   onCreatePracticeRoom,
   onCreateModeRoom,
-  onJoinByCode,
-  onToggleRoomList,
-  onJoinRoom,
+  onJoinAnyRoom,
+  showCreatedRoomsList,
+  createdRooms,
+  onJoinCreatedRoom,
   onExit
 }: MainMenuProps) {
   const showRoomTools = selectedMode === "11vs11";
   const showPracticeTools = selectedMode === "Practice";
-  const maxTeamSize = roomTeamInfo?.maxTeamSize ?? 11;
-  const redCount = roomTeamInfo?.redCount ?? 0;
-  const blueCount = roomTeamInfo?.blueCount ?? 0;
-  const redFull = roomTeamInfo?.redFull ?? false;
-  const blueFull = roomTeamInfo?.blueFull ?? false;
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
+
+  useEffect(() => {
+    if (!showRoomTools) setShowCreatePanel(false);
+  }, [showRoomTools]);
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/75 backdrop-blur-md">
@@ -129,91 +121,85 @@ export default function MainMenu({
 
         {showRoomTools && (
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
-            {/* Chon doi truoc khi tao/vao phong 11vs11 */}
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Chon doi</h3>
             <div className="mb-3 grid gap-2 md:grid-cols-2">
               <button
                 type="button"
-                disabled={redFull}
                 onClick={() => onSelectTeam("RED")}
                 className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                   selectedTeam === "RED"
                     ? "border-red-300 bg-red-500/25 text-white"
                     : "border-slate-600 bg-slate-800 text-slate-100 hover:border-red-300/70"
-                } ${redFull ? "cursor-not-allowed opacity-50" : ""}`}
+                }`}
               >
                 <span className="font-bold text-red-300">Doi Do</span>
-                <span className="mt-1 block text-xs text-slate-300">
-                  {redCount}/{maxTeamSize} nguoi {redFull ? "(DAY)" : ""}
-                </span>
               </button>
               <button
                 type="button"
-                disabled={blueFull}
                 onClick={() => onSelectTeam("BLUE")}
                 className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                   selectedTeam === "BLUE"
                     ? "border-blue-300 bg-blue-500/25 text-white"
                     : "border-slate-600 bg-slate-800 text-slate-100 hover:border-blue-300/70"
-                } ${blueFull ? "cursor-not-allowed opacity-50" : ""}`}
+                }`}
               >
                 <span className="font-bold text-blue-300">Doi Xanh</span>
-                <span className="mt-1 block text-xs text-slate-300">
-                  {blueCount}/{maxTeamSize} nguoi {blueFull ? "(DAY)" : ""}
-                </span>
               </button>
             </div>
-            <p className="mb-3 text-xs text-slate-400">
-              Neu mot doi da day, ban van co the chon doi con lai (toi da 11 nguoi/doi).
-            </p>
 
-            {/* Che do 11vs11 su dung ma phong hoac danh sach phong de vao dung tran dau */}
-            <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
-              <input
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-400"
-                placeholder="Nhap ma phong de tham gia..."
-                value={roomCode}
-                onChange={(e) => onRoomCodeChange(e.target.value)}
-              />
+            <div className="grid gap-2 md:grid-cols-2">
               <button
-                onClick={onCreateModeRoom}
-                className="rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                type="button"
+                onClick={() => setShowCreatePanel(true)}
+                className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_18px_rgba(251,191,36,0.25)] transition hover:brightness-110"
               >
                 Tao phong
               </button>
               <button
-                onClick={onJoinByCode}
-                className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                type="button"
+                onClick={onJoinAnyRoom}
+                className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
               >
                 Vao phong
               </button>
             </div>
 
-            <div className="mt-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-200">Danh sach phong</h3>
-              <button
-                onClick={onToggleRoomList}
-                className="flex items-center gap-1 rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-100"
-              >
-                <List size={14} /> {showRoomList ? "An danh sach" : "Mo danh sach"}
-              </button>
-            </div>
+            {showCreatePanel && (
+              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
+                <input
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400"
+                  placeholder="Nhap ma phong de tao..."
+                  value={roomCode}
+                  onChange={(e) => onRoomCodeChange(e.target.value)}
+                />
+                <button
+                  onClick={onCreateModeRoom}
+                  className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
+                >
+                  Create
+                </button>
+              </div>
+            )}
 
-            {showRoomList && (
-              <div className="mt-2 grid gap-2">
-                {rooms.map((room) => (
-                  <button
-                    key={room.id}
-                    onClick={() => onJoinRoom(room)}
-                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-left text-sm text-slate-100 transition hover:border-sky-400"
-                  >
-                    <div className="font-medium">{room.name}</div>
-                    <div className="text-xs text-slate-300">
-                      {room.players}/{room.capacity} nguoi | Do: {room.redCount ?? 0}/11 | Xanh:{" "}
-                      {room.blueCount ?? 0}/11
-                    </div>
-                  </button>
-                ))}
+            {showCreatedRoomsList && createdRooms.length > 0 && (
+              <div className="mt-3">
+                <h3 className="mb-2 text-sm font-semibold text-slate-200">Phong da tao</h3>
+                <div className="grid gap-2">
+                  {createdRooms.map((room) => (
+                    <button
+                      key={room.id}
+                      type="button"
+                      onClick={() => onJoinCreatedRoom(room.id)}
+                      className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-left text-sm text-slate-100 transition hover:border-sky-400"
+                    >
+                      <div className="font-medium">{room.name}</div>
+                      <div className="mt-1 text-xs text-slate-300">
+                        {room.players}/{room.capacity} nguoi | Do: {room.redCount ?? 0}/11 | Xanh:{" "}
+                        {room.blueCount ?? 0}/11
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

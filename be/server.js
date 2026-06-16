@@ -295,11 +295,14 @@ function resolvePreferredTeam(room, preferredTeam) {
   const { redFull, blueFull } = getTeamAvailability(room);
 
   if (preferredTeam === TEAM_RED || preferredTeam === TEAM_BLUE) {
+    // Neu doi nguoi choi chon da day thi tu dong doi sang doi con lai (neu co).
     if (preferredTeam === TEAM_RED && redFull) {
-      return { team: null, error: "Doi Do da day (11/11)." };
+      if (blueFull) return { team: null, error: "Ca 2 doi trong phong da day." };
+      return { team: TEAM_BLUE, error: null };
     }
     if (preferredTeam === TEAM_BLUE && blueFull) {
-      return { team: null, error: "Doi Xanh da day (11/11)." };
+      if (redFull) return { team: null, error: "Ca 2 doi trong phong da day." };
+      return { team: TEAM_RED, error: null };
     }
     return { team: preferredTeam, error: null };
   }
@@ -1371,7 +1374,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("create-room", ({ roomId, playerName, gameMode, preferredTeam }) => {
+  socket.on("create-room", ({ roomId, playerName, gameMode, preferredTeam, autoJoin = true }) => {
     const finalRoomId =
       String(roomId || "").trim() || `room-${Date.now()}-${++roomCounter}`;
     const roomName = `Phong ${finalRoomId}`;
@@ -1389,6 +1392,16 @@ io.on("connection", (socket) => {
       const newRoom = createEmptyRoom(finalRoomId, roomName);
       newRoom.gameMode = normalizedMode;
       rooms.set(finalRoomId, newRoom);
+    }
+
+    // Neu autoJoin = false: chi tao phong, khong vao tran dau.
+    if (autoJoin === false) {
+      emitRoomListToAll();
+      socket.emit("room-created", {
+        exists: true,
+        roomId: finalRoomId
+      });
+      return;
     }
 
     const profileName = socketProfiles.get(socket.id)?.playerName;
@@ -1413,6 +1426,40 @@ io.on("connection", (socket) => {
   socket.on("join-room", ({ roomId, playerName, preferredTeam }) => {
     const profileName = socketProfiles.get(socket.id)?.playerName;
     joinRoom(socket, String(roomId || "").trim(), playerName || profileName, preferredTeam);
+  });
+
+  // 11vs11: vao phong tu dong (khong can nhap ma phong).
+  // Server se chon 1 phong con slot, uu tien phong ma doi nguoi choi dang chon con du slot.
+  socket.on("join-any-room", ({ gameMode, playerName, preferredTeam }) => {
+    const mode = gameMode === "1vsBot" ? "1vsBot" : gameMode === "practice" ? "practice" : "11vs11";
+    if (mode !== "11vs11") {
+      socket.emit("room-error", { message: "Chi ho tro join tu dong cho che do 11 vs 11." });
+      return;
+    }
+
+    const candidates = Array.from(rooms.values())
+      .filter((r) => r.gameMode === "11vs11" && Object.keys(r.players).length < MAX_PLAYERS)
+      .map((r) => {
+        const t = getTeamAvailability(r);
+        const preferredAvailable =
+          (preferredTeam === TEAM_RED && !t.redFull) || (preferredTeam === TEAM_BLUE && !t.blueFull);
+        return { room: r, preferredAvailable, totalPlayers: Object.keys(r.players).length };
+      });
+
+    if (candidates.length === 0) {
+      socket.emit("room-full", { message: "Chua co phong 11 vs 11 nao con slot." });
+      return;
+    }
+
+    // Uu tien phong co doi dang chon con slot; sau do uu tien phong co tong so nguoi it hon.
+    candidates.sort((a, b) => {
+      if (a.preferredAvailable !== b.preferredAvailable) return a.preferredAvailable ? -1 : 1;
+      return a.totalPlayers - b.totalPlayers;
+    });
+
+    const chosen = candidates[0].room;
+    const profileName = socketProfiles.get(socket.id)?.playerName;
+    joinRoom(socket, chosen.id, playerName || profileName, preferredTeam);
   });
 
   // Frontend moi yeu cau su dung su kien move.

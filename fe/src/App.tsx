@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import GameCanvas from "./components/GameCanvas";
 import MainMenu from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
 import GKQuizModal from "./components/GKQuizModal";
-import type { DuelPayload, GKDuelPayload, GameState, Room, RoomInfo } from "./types";
+import type { DuelPayload, GKDuelPayload, GameState, Room } from "./types";
 
 type GameMode = "1vsBot" | "11vs11" | "Practice";
 type TeamChoice = "RED" | "BLUE";
@@ -34,13 +34,12 @@ export default function App() {
   const [roomCode, setRoomCode] = useState("");
   const [practiceTeammates, setPracticeTeammates] = useState(0);
   const [practiceOpponents, setPracticeOpponents] = useState(1);
-  const [rooms, setRooms] = useState<Room[]>([
-    { id: "room-1", name: "Phong Lop A", players: 0, capacity: 22 },
-    { id: "room-2", name: "Phong Lop B", players: 0, capacity: 22 }
-  ]);
-  const [showRoomList, setShowRoomList] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
-  const [roomTeamInfo, setRoomTeamInfo] = useState<Pick<RoomInfo, "redCount" | "blueCount" | "maxTeamSize" | "redFull" | "blueFull"> | null>(null);
+  const pendingNoticeRef = useRef<string | null>(null);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [createdRoomIds, setCreatedRoomIds] = useState<string[]>([]);
+  const [showCreatedRoomsList, setShowCreatedRoomsList] = useState(false);
+  const createdRooms = rooms.filter((r) => createdRoomIds.includes(r.id));
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [duelData, setDuelData] = useState<DuelPayload | null>(null);
   const [gkDuelData, setGkDuelData] = useState<GKDuelPayload | null>(null);
@@ -75,37 +74,23 @@ export default function App() {
   useEffect(() => {
     socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
       setGameState({ ...payload, myId: payload.myId });
+      const notice = pendingNoticeRef.current;
+      if (notice) {
+        alert(notice);
+        pendingNoticeRef.current = null;
+      }
     });
     socket.on("gameState", (payload: Omit<GameState, "myId">) => {
       setGameState((prev) => ({ ...prev, ...payload }));
     });
     socket.on("room-list", (roomData: Room[]) => {
-      if (Array.isArray(roomData) && roomData.length > 0) {
-        setRooms(roomData);
-      }
-    });
-    socket.on("room-info", (info: RoomInfo) => {
-      if (!info.exists) {
-        setRoomTeamInfo(null);
-        return;
-      }
-      const nextInfo = {
-        redCount: info.redCount ?? 0,
-        blueCount: info.blueCount ?? 0,
-        maxTeamSize: info.maxTeamSize ?? 11,
-        redFull: info.redFull ?? false,
-        blueFull: info.blueFull ?? false
-      };
-      setRoomTeamInfo(nextInfo);
-      // Tu dong chuyen sang doi con slot neu doi dang chon da day.
-      if (nextInfo.redFull && !nextInfo.blueFull) {
-        setSelectedTeam("BLUE");
-      } else if (nextInfo.blueFull && !nextInfo.redFull) {
-        setSelectedTeam("RED");
-      }
+      if (Array.isArray(roomData)) setRooms(roomData);
     });
     socket.on("room-error", (payload: { message?: string }) => {
       if (payload?.message) alert(payload.message);
+    });
+    socket.on("room-created", (payload: { exists?: boolean; roomId?: string }) => {
+      if (payload?.exists) alert("Tao phong thanh cong!");
     });
     socket.on("start-duel", (payload: DuelPayload) => {
       setDuelData(payload);
@@ -135,8 +120,8 @@ export default function App() {
       socket.off("init");
       socket.off("gameState");
       socket.off("room-list");
-      socket.off("room-info");
       socket.off("room-error");
+      socket.off("room-created");
       socket.off("start-duel");
       socket.off("duel-result");
       socket.off("start-gk-duel");
@@ -218,15 +203,6 @@ export default function App() {
     setShowMenu(false);
   };
 
-  const requestRoomTeamInfo = (roomId: string) => {
-    const trimmed = roomId.trim();
-    if (!trimmed) {
-      setRoomTeamInfo(null);
-      return;
-    }
-    socket.emit("request-room-info", { roomId: trimmed });
-  };
-
   const handleSelectMode = (mode: GameMode) => {
     setSelectedMode(mode);
 
@@ -238,25 +214,40 @@ export default function App() {
 
     if (mode === "11vs11") {
       setSelectedTeam("RED");
-      setRoomTeamInfo(null);
+      setRoomCode("");
     }
-
-    socket.emit("request-room-list");
   };
 
   const handleCreateModeRoom = () => {
     if (selectedMode !== "11vs11") return;
-    if (roomTeamInfo?.redFull && selectedTeam === "RED") {
-      alert("Doi Do da day. Hay chon Doi Xanh.");
-      return;
-    }
-    if (roomTeamInfo?.blueFull && selectedTeam === "BLUE") {
-      alert("Doi Xanh da day. Hay chon Doi Do.");
-      return;
-    }
+    const finalName = playerName.trim() || "Player";
+    localStorage.setItem("playerName", finalName);
+    socket.emit("set-player-profile", { playerName: finalName });
+
     const roomId = roomCode.trim() || `${selectedMode.toLowerCase()}-${Date.now()}`;
     setRoomCode(roomId);
-    startSession("create-room", selectedMode, roomId, selectedTeam);
+    setCreatedRoomIds((prev) => (prev.includes(roomId) ? prev : [...prev, roomId]));
+    setShowCreatedRoomsList(true);
+
+    // autoJoin=false: chi tao phong, khong vao game ngay.
+    socket.emit("create-room", {
+      roomId,
+      playerName: finalName,
+      gameMode: selectedMode,
+      preferredTeam: selectedTeam,
+      autoJoin: false
+    });
+  };
+
+  const handleJoinAnyRoom = () => {
+    if (selectedMode !== "11vs11") return;
+    const finalName = playerName.trim() || "Player";
+    localStorage.setItem("playerName", finalName);
+    socket.emit("set-player-profile", { playerName: finalName });
+
+    pendingNoticeRef.current = "Vao phong thanh cong!";
+    socket.emit("join-any-room", { gameMode: "11vs11", playerName: finalName, preferredTeam: selectedTeam });
+    setShowMenu(false);
   };
 
   const handleCreatePracticeRoom = () => {
@@ -270,23 +261,6 @@ export default function App() {
       opponents: Math.max(1, Math.min(11, practiceOpponents))
     });
     setShowMenu(false);
-  };
-
-  const handleJoinByCode = () => {
-    if (selectedMode !== "11vs11") return;
-    if (!roomCode.trim()) {
-      alert("Vui long nhap ma phong.");
-      return;
-    }
-    if (roomTeamInfo?.redFull && selectedTeam === "RED") {
-      alert("Doi Do da day. Hay chon Doi Xanh.");
-      return;
-    }
-    if (roomTeamInfo?.blueFull && selectedTeam === "BLUE") {
-      alert("Doi Xanh da day. Hay chon Doi Do.");
-      return;
-    }
-    startSession("join-room", selectedMode, roomCode.trim(), selectedTeam);
   };
 
   const handleExit = () => {
@@ -326,47 +300,23 @@ export default function App() {
           playerName={playerName}
           selectedMode={selectedMode}
           selectedTeam={selectedTeam}
-          roomTeamInfo={roomTeamInfo}
           roomCode={roomCode}
           practiceTeammates={practiceTeammates}
           practiceOpponents={practiceOpponents}
-          rooms={rooms}
-          showRoomList={showRoomList}
           onPlayerNameChange={setPlayerName}
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
-          onRoomCodeChange={(value) => {
-            setRoomCode(value);
-            requestRoomTeamInfo(value);
-          }}
+          onRoomCodeChange={(value) => setRoomCode(value)}
           onPracticeTeammatesChange={(value) => setPracticeTeammates(Number.isFinite(value) ? value : 0)}
           onPracticeOpponentsChange={(value) => setPracticeOpponents(Number.isFinite(value) ? value : 1)}
           onCreatePracticeRoom={handleCreatePracticeRoom}
           onCreateModeRoom={handleCreateModeRoom}
-          onJoinByCode={handleJoinByCode}
-          onToggleRoomList={() => {
-            socket.emit("request-room-list");
-            setShowRoomList((prev) => !prev);
-          }}
-          onJoinRoom={(room) => {
-            const modeToUse = selectedMode === "1vsBot" || !selectedMode ? "11vs11" : selectedMode;
-            setRoomCode(room.id);
-            setRoomTeamInfo({
-              redCount: room.redCount ?? 0,
-              blueCount: room.blueCount ?? 0,
-              maxTeamSize: room.maxTeamSize ?? 11,
-              redFull: room.redFull ?? false,
-              blueFull: room.blueFull ?? false
-            });
-            if (room.redFull && selectedTeam === "RED") {
-              alert("Doi Do da day. Hay chon Doi Xanh.");
-              return;
-            }
-            if (room.blueFull && selectedTeam === "BLUE") {
-              alert("Doi Xanh da day. Hay chon Doi Do.");
-              return;
-            }
-            startSession("join-room", modeToUse, room.id, selectedTeam);
+          onJoinAnyRoom={handleJoinAnyRoom}
+          showCreatedRoomsList={showCreatedRoomsList}
+          createdRooms={createdRooms}
+          onJoinCreatedRoom={(roomId) => {
+            if (!selectedMode) return;
+            startSession("join-room", selectedMode, roomId, selectedTeam);
           }}
           onExit={handleExit}
         />
