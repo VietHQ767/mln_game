@@ -352,7 +352,7 @@ export default function App() {
                       : gameState.match.phase === "CORNER_KICK"
                         ? gameState.match.setPiece?.takerId === gameState.myId
                           ? "Phat goc - click chuot de da (hoac SPACE)"
-                          : "Dang phat goc"
+                          : "Phat goc - di chuyen nhung khong lai gan nguoi da phat"
                         : gameState.match.phase === "GOAL_KICK"
                           ? "Dang phat bong len"
                           : "Bong dang song")}

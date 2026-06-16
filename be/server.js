@@ -60,6 +60,7 @@ const BALL_FREE_SPEED = 6.2;
 const SHOOT_SPEED = 15;
 const PASS_SPEED = 11;
 const THROW_IN_SPEED = 8.5;
+const CORNER_KEEP_OUT_DISTANCE = 90;
 const ENERGY_MAX = 100;
 const PASS_ENERGY_COST = 15;
 const SHOOT_ENERGY_COST = 25;
@@ -171,6 +172,47 @@ function placeSetPieceTaker(taker, type, spot) {
 
 function getDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function enforceCornerKickKeepOut(taker, player) {
+  if (!taker || player.id === taker.id) return;
+
+  const minDistance = taker.radius + player.radius + CORNER_KEEP_OUT_DISTANCE;
+  const dx = player.x - taker.x;
+  const dy = player.y - taker.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance >= minDistance || distance < 0.001) return;
+
+  const push = (minDistance - distance) / distance;
+  player.x += dx * push;
+  player.y += dy * push;
+  applyMovementBounds(player);
+}
+
+function applyMoveInput(room, player, inputState) {
+  const setPiece = room.match.setPiece;
+  if (
+    setPiece?.takerId === player.id &&
+    (setPiece.type === "THROW_IN" || setPiece.type === "CORNER_KICK")
+  ) {
+    player.input = { up: false, down: false, left: false, right: false };
+    return;
+  }
+
+  if (room.match.phase !== "PLAYING") {
+    if (setPiece?.type === "CORNER_KICK" && setPiece.takerId !== player.id) {
+      // Cac cau thu khac duoc di chuyen trong phat goc.
+    } else if (!setPiece || setPiece.takerId !== player.id) {
+      return;
+    }
+  }
+
+  player.input = {
+    up: Boolean(inputState?.up),
+    down: Boolean(inputState?.down),
+    left: Boolean(inputState?.left),
+    right: Boolean(inputState?.right)
+  };
 }
 
 function findTeammateNearPoint(room, team, exceptId, x, y, hitRadius = 42) {
@@ -786,6 +828,55 @@ function getCornerKickSpot(exitOnLeft, outY) {
   };
 }
 
+function awardBallAfterGoal(room, scoredTeam) {
+  const receivingTeam = getOpponentTeam(scoredTeam);
+  const center = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2 };
+  const receiver =
+    getSetPieceTaker(room, receivingTeam, center) || getNearestPlayerInTeam(room, receivingTeam, center);
+
+  room.match.phase = "PLAYING";
+  room.match.setPiece = null;
+  room.match.duel = null;
+  room.botPassTargetId = null;
+
+  if (!receiver) {
+    room.ballHolderId = null;
+    room.ball.x = FIELD_WIDTH / 2;
+    room.ball.y = FIELD_HEIGHT / 2;
+    room.ball.vx = 0;
+    room.ball.vy = 0;
+    room.lastTouchPlayerId = null;
+    room.botCarrierId = null;
+    return;
+  }
+
+  const offsetX = receivingTeam === TEAM_RED ? -35 : 35;
+  receiver.x = clamp(
+    FIELD_WIDTH / 2 + offsetX,
+    PLAY_MIN_X + receiver.radius,
+    PLAY_MAX_X - receiver.radius
+  );
+  receiver.y = clamp(FIELD_HEIGHT / 2, PLAY_MIN_Y + receiver.radius, PLAY_MAX_Y - receiver.radius);
+  receiver.direction = { dx: receivingTeam === TEAM_RED ? 1 : -1, dy: 0 };
+
+  room.ballHolderId = receiver.id;
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+  updateBallToHolder(room);
+  room.lastTouchTeam = receivingTeam;
+  room.lastTouchPlayerId = receiver.id;
+
+  if (room.gameMode === "1vsBot" && receiver.team === TEAM_BLUE && receiver.isBot) {
+    room.botCarrierId = receiver.id;
+  } else {
+    room.botCarrierId = null;
+  }
+
+  room.match.notice = `Vaoo! ${scoredTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} ghi ban! ${
+    receivingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"
+  } nhan bong o giua san.`;
+}
+
 function getNearestPlayerInTeam(room, team, spot) {
   const teamPlayers = Object.values(room.players).filter((player) => player.team === team);
   if (teamPlayers.length === 0) return null;
@@ -1006,17 +1097,7 @@ function handleBoundaryChecks(room) {
   if (isOutHorizontal && inGoalMouth) {
     const scoredTeam = outX < PLAY_MIN_X ? TEAM_BLUE : TEAM_RED;
     room.score[scoredTeam] += 1;
-    room.match.notice = `Vaoo! ${scoredTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} ghi ban!`;
-    room.match.phase = "PLAYING";
-    room.match.setPiece = null;
-    room.ballHolderId = null;
-    room.ball.x = FIELD_WIDTH / 2;
-    room.ball.y = FIELD_HEIGHT / 2;
-    room.ball.vx = 0;
-    room.ball.vy = 0;
-    room.lastTouchPlayerId = null;
-    room.botCarrierId = null;
-    room.botPassTargetId = null;
+    awardBallAfterGoal(room, scoredTeam);
     return;
   }
 
@@ -1448,14 +1529,15 @@ function updateRoom(room) {
   } else if (room.match.setPiece) {
     const setPiece = room.match.setPiece;
     const takerId = setPiece.takerId;
-    Object.values(room.players).forEach((player) => {
-      if (player.id !== takerId) {
-        player.input = { up: false, down: false, left: false, right: false };
-      }
-    });
-    if (takerId && room.players[takerId]) {
-      const taker = room.players[takerId];
-      if (setPiece.type === "THROW_IN") {
+    const taker = takerId ? room.players[takerId] : null;
+
+    if (setPiece.type === "THROW_IN") {
+      Object.values(room.players).forEach((player) => {
+        if (player.id !== takerId) {
+          player.input = { up: false, down: false, left: false, right: false };
+        }
+      });
+      if (taker) {
         taker.input = { up: false, down: false, left: false, right: false };
         placeSetPieceTaker(taker, "THROW_IN", setPiece.spot);
         if (room.ballHolderId !== taker.id) {
@@ -1465,7 +1547,39 @@ function updateRoom(room) {
         if (taker.isBot) {
           botExecuteSetPiece(room);
         }
-      } else if (taker.isBot) {
+      }
+    } else if (setPiece.type === "CORNER_KICK") {
+      if (taker) {
+        taker.input = { up: false, down: false, left: false, right: false };
+        placeSetPieceTaker(taker, "CORNER_KICK", setPiece.spot);
+        room.ball.x = setPiece.spot.x;
+        room.ball.y = setPiece.spot.y;
+        room.ball.vx = 0;
+        room.ball.vy = 0;
+      }
+
+      for (const player of Object.values(room.players)) {
+        if (player.id === takerId) continue;
+        if (player.isBot) {
+          updateBotAI(room, player);
+        } else {
+          updatePlayerMovement(player);
+        }
+        if (taker) {
+          enforceCornerKickKeepOut(taker, player);
+        }
+      }
+
+      if (taker?.isBot) {
+        botExecuteSetPiece(room);
+      }
+    } else if (taker) {
+      Object.values(room.players).forEach((player) => {
+        if (player.id !== takerId) {
+          player.input = { up: false, down: false, left: false, right: false };
+        }
+      });
+      if (taker.isBot) {
         updateBotAI(room, taker);
         botExecuteSetPiece(room);
       } else {
@@ -1795,22 +1909,7 @@ io.on("connection", (socket) => {
     const player = room.players[socket.id];
     if (!player) return;
 
-    if (room.match.setPiece?.type === "THROW_IN" && room.match.setPiece.takerId === socket.id) {
-      player.input = { up: false, down: false, left: false, right: false };
-      return;
-    }
-
-    if (room.match.phase !== "PLAYING") {
-      const setPiece = room.match.setPiece;
-      if (!setPiece || setPiece.takerId !== socket.id) return;
-    }
-
-    player.input = {
-      up: Boolean(inputState?.up),
-      down: Boolean(inputState?.down),
-      left: Boolean(inputState?.left),
-      right: Boolean(inputState?.right)
-    };
+    applyMoveInput(room, player, inputState);
   });
 
   // Tuong thich nguoc voi frontend cu van gui playerInput.
@@ -1823,21 +1922,7 @@ io.on("connection", (socket) => {
     const player = room.players[socket.id];
     if (!player) return;
 
-    if (room.match.setPiece?.type === "THROW_IN" && room.match.setPiece.takerId === socket.id) {
-      player.input = { up: false, down: false, left: false, right: false };
-      return;
-    }
-
-    if (room.match.phase !== "PLAYING") {
-      const setPiece = room.match.setPiece;
-      if (!setPiece || setPiece.takerId !== socket.id) return;
-    }
-    player.input = {
-      up: Boolean(inputState?.up),
-      down: Boolean(inputState?.down),
-      left: Boolean(inputState?.left),
-      right: Boolean(inputState?.right)
-    };
+    applyMoveInput(room, player, inputState);
   });
 
   // Su kien sut/chuyen de dua bong chet tro lai bong song.
