@@ -174,7 +174,7 @@ function getDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function enforceCornerKickKeepOut(taker, player) {
+function enforceSetPieceKeepOut(taker, player) {
   if (!taker || player.id === taker.id) return;
 
   const minDistance = taker.radius + player.radius + CORNER_KEEP_OUT_DISTANCE;
@@ -200,8 +200,11 @@ function applyMoveInput(room, player, inputState) {
   }
 
   if (room.match.phase !== "PLAYING") {
-    if (setPiece?.type === "CORNER_KICK" && setPiece.takerId !== player.id) {
-      // Cac cau thu khac duoc di chuyen trong phat goc.
+    if (
+      (setPiece?.type === "CORNER_KICK" || setPiece?.type === "THROW_IN") &&
+      setPiece.takerId !== player.id
+    ) {
+      // Cac cau thu khac duoc di chuyen trong phat goc / nem bien.
     } else if (!setPiece || setPiece.takerId !== player.id) {
       return;
     }
@@ -956,21 +959,23 @@ function botExecuteSetPiece(room) {
 }
 
 function awardGoalKick(room, defendingTeam, rawSpot, notice) {
-  const onLeftGoal = rawSpot.x <= PLAY_MIN_X + 1;
+  const onLeftGoal = defendingTeam === TEAM_RED;
+  const kickX = onLeftGoal ? PLAY_MIN_X + 80 : PLAY_MAX_X - 80;
+  const kickY = clamp(rawSpot.y, PENALTY_MIN_Y, PENALTY_MAX_Y);
   const spot = {
     x: onLeftGoal ? PLAY_MIN_X : PLAY_MAX_X,
-    y: clamp(rawSpot.y, PLAY_MIN_Y, PLAY_MAX_Y)
+    y: kickY
   };
 
-  const taker = getSetPieceTaker(room, defendingTeam, spot);
+  const taker = getSetPieceTaker(room, defendingTeam, { x: kickX, y: kickY });
   if (!taker) return;
 
   taker.x = clamp(
-    onLeftGoal ? PLAY_MIN_X + taker.radius + 45 : PLAY_MAX_X - taker.radius - 45,
+    kickX,
     PLAY_MIN_X + taker.radius,
     PLAY_MAX_X - taker.radius
   );
-  taker.y = clamp(spot.y, PLAY_MIN_Y + taker.radius, PLAY_MAX_Y - taker.radius);
+  taker.y = clamp(kickY, PENALTY_MIN_Y + taker.radius, PENALTY_MAX_Y - taker.radius);
   taker.direction = { dx: onLeftGoal ? 1 : -1, dy: 0 };
 
   room.match.phase = "PLAYING";
@@ -1105,21 +1110,25 @@ function handleBoundaryChecks(room) {
     const exitOnLeft = outX < PLAY_MIN_X;
     const attackingTeam = exitOnLeft ? TEAM_BLUE : TEAM_RED;
     const defendingTeam = getOpponentTeam(attackingTeam);
-    const cornerSpot = getCornerKickSpot(exitOnLeft, outY);
-
-    // Bong vuot bien ngang ngoai khung thanh:
-    // - Doi phong ngu cham cuoi => phat goc cho doi tan cong.
-    // - Doi tan cong cham cuoi (sut truot) => phat goc cho doi phong ngu.
-    const awardedTeam = lastTouchTeam === defendingTeam ? attackingTeam : defendingTeam;
     const sideLabel = exitOnLeft ? "ben trai" : "ben phai";
 
-    startSetPiece(
-      room,
-      "CORNER_KICK",
-      awardedTeam,
-      cornerSpot,
-      `${awardedTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} duoc huong phat goc ${sideLabel}!`
-    );
+    if (lastTouchTeam === defendingTeam) {
+      const cornerSpot = getCornerKickSpot(exitOnLeft, outY);
+      startSetPiece(
+        room,
+        "CORNER_KICK",
+        attackingTeam,
+        cornerSpot,
+        `${attackingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} duoc huong phat goc ${sideLabel}!`
+      );
+    } else {
+      awardGoalKick(
+        room,
+        defendingTeam,
+        { x: outX, y: outY },
+        `${defendingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} phat bong len trong vong cam ${sideLabel}!`
+      );
+    }
   }
 }
 
@@ -1532,11 +1541,6 @@ function updateRoom(room) {
     const taker = takerId ? room.players[takerId] : null;
 
     if (setPiece.type === "THROW_IN") {
-      Object.values(room.players).forEach((player) => {
-        if (player.id !== takerId) {
-          player.input = { up: false, down: false, left: false, right: false };
-        }
-      });
       if (taker) {
         taker.input = { up: false, down: false, left: false, right: false };
         placeSetPieceTaker(taker, "THROW_IN", setPiece.spot);
@@ -1544,9 +1548,22 @@ function updateRoom(room) {
           room.ballHolderId = taker.id;
         }
         updateBallToHolder(room);
-        if (taker.isBot) {
-          botExecuteSetPiece(room);
+      }
+
+      for (const player of Object.values(room.players)) {
+        if (player.id === takerId) continue;
+        if (player.isBot) {
+          updateBotAI(room, player);
+        } else {
+          updatePlayerMovement(player);
         }
+        if (taker) {
+          enforceSetPieceKeepOut(taker, player);
+        }
+      }
+
+      if (taker?.isBot) {
+        botExecuteSetPiece(room);
       }
     } else if (setPiece.type === "CORNER_KICK") {
       if (taker) {
@@ -1566,7 +1583,7 @@ function updateRoom(room) {
           updatePlayerMovement(player);
         }
         if (taker) {
-          enforceCornerKickKeepOut(taker, player);
+          enforceSetPieceKeepOut(taker, player);
         }
       }
 

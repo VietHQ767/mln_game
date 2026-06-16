@@ -348,7 +348,7 @@ export default function App() {
                     : gameState.match.phase === "THROW_IN"
                       ? gameState.match.setPiece?.takerId === gameState.myId
                         ? "Nem bien - click vao dong doi de chuyen bong"
-                        : "Dang nem bien"
+                        : "Nem bien - di chuyen nhung khong lai gan nguoi nem"
                       : gameState.match.phase === "CORNER_KICK"
                         ? gameState.match.setPiece?.takerId === gameState.myId
                           ? "Phat goc - click chuot de da (hoac SPACE)"
