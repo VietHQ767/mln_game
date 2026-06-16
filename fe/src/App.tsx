@@ -273,7 +273,10 @@ export default function App() {
       isSetPieceTaker &&
       gameState.ballHolderId === gameState.myId;
 
-    if (!isCornerKick && !isThrowIn && gameState.ballHolderId !== gameState.myId) return;
+    if (!isCornerKick && !isThrowIn) {
+      if (gameState.match.phase !== "PLAYING") return;
+      if (gameState.ballHolderId !== gameState.myId) return;
+    }
     socket.emit("shoot-ball", { mouseX, mouseY });
   }
 

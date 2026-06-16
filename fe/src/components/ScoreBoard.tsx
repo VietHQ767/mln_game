@@ -5,7 +5,7 @@ interface ScoreBoardProps {
 
 export default function ScoreBoard({ red, blue }: ScoreBoardProps) {
   return (
-    <div className="fixed left-4 top-4 z-20 rounded-xl border border-white/15 bg-black/50 px-4 py-2 text-white shadow-lg backdrop-blur">
+    <div className="pointer-events-none fixed left-4 top-4 z-20 rounded-xl border border-white/15 bg-black/50 px-4 py-2 text-white shadow-lg backdrop-blur">
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300">Ty so</p>
       <div className="flex items-center gap-3 text-sm font-bold">
         <span className="flex items-center gap-1.5 text-red-400">

@@ -68,6 +68,7 @@ const ENERGY_RECHARGE_AMOUNT = 30;
 const DUEL_TRIGGER_DISTANCE = 30;
 const DUEL_TIMEOUT_MS = 10000;
 const DUEL_FREEZE_MS = 3000;
+const DUEL_COOLDOWN_MS = 3000;
 const BOT_SPEED = 2.1;
 
 const TEAM_RED = "RED";
@@ -214,6 +215,7 @@ function createEmptyRoom(roomId, roomName) {
     // - botPassTargetId: bot duoc phep nhan bong khi co duong chuyen.
     botCarrierId: null,
     botPassTargetId: null,
+    duelCooldownUntil: 0,
     practiceOwnerId: null,
     practiceConfig: {
       teammates: 0,
@@ -641,32 +643,37 @@ function captureBallIfTouching(room) {
   if (room.ballHolderId) return;
   if (room.match.phase !== "PLAYING") return;
 
-  for (const player of Object.values(room.players)) {
-    const distance = getDistance(player, room.ball);
-    if (distance <= player.radius + BALL_RADIUS) {
-      if (room.gameMode === "1vsBot" && player.team === TEAM_BLUE && player.isBot) {
-        // Trong mode 1vsMay, bot khong tu y doi nguoi dan bong trong cung doi.
-        // Chi bot dang giu quyen hoac bot duoc chi dinh nhan chuyen moi duoc nhan bong.
-        if (room.botPassTargetId) {
-          if (player.id !== room.botPassTargetId) continue;
-        } else if (room.botCarrierId && player.id !== room.botCarrierId) {
-          continue;
-        }
-      }
+  const touchingPlayers = Object.values(room.players)
+    .filter((player) => !isPlayerFrozen(player))
+    .filter((player) => getDistance(player, room.ball) <= player.radius + BALL_RADIUS)
+    .sort((a, b) => {
+      if (a.isBot !== b.isBot) return a.isBot ? 1 : -1;
+      return 0;
+    });
 
-      room.ballHolderId = player.id;
-      updateBallToHolder(room);
-      if (room.gameMode === "1vsBot") {
-        if (player.team === TEAM_BLUE && player.isBot) {
-          room.botCarrierId = player.id;
-          room.botPassTargetId = null;
-        } else {
-          room.botCarrierId = null;
-          room.botPassTargetId = null;
-        }
+  for (const player of touchingPlayers) {
+    if (room.gameMode === "1vsBot" && player.team === TEAM_BLUE && player.isBot) {
+      // Trong mode 1vsMay, bot khong tu y doi nguoi dan bong trong cung doi.
+      // Chi bot dang giu quyen hoac bot duoc chi dinh nhan chuyen moi duoc nhan bong.
+      if (room.botPassTargetId) {
+        if (player.id !== room.botPassTargetId) continue;
+      } else if (room.botCarrierId && player.id !== room.botCarrierId) {
+        continue;
       }
-      return;
     }
+
+    room.ballHolderId = player.id;
+    updateBallToHolder(room);
+    if (room.gameMode === "1vsBot") {
+      if (player.team === TEAM_BLUE && player.isBot) {
+        room.botCarrierId = player.id;
+        room.botPassTargetId = null;
+      } else {
+        room.botCarrierId = null;
+        room.botPassTargetId = null;
+      }
+    }
+    return;
   }
 }
 
@@ -951,16 +958,18 @@ function kickBallToward(room, toX, toY, speed, byTeam, byPlayerId = null, target
 
 function startDuel(room) {
   if (room.match.phase !== "PLAYING" || room.match.setPiece || !room.ballHolderId) return;
+  if (Date.now() < (room.duelCooldownUntil || 0)) return;
 
   const holder = room.players[room.ballHolderId];
-  if (!holder) {
-    room.ballHolderId = null;
+  if (!holder || isPlayerFrozen(holder)) {
+    if (!holder) room.ballHolderId = null;
     return;
   }
 
   const challenger = Object.values(room.players).find((player) => {
     if (player.id === holder.id) return false;
     if (player.team === holder.team) return false;
+    if (isPlayerFrozen(player)) return false;
     return getDistance(player, holder) < DUEL_TRIGGER_DISTANCE;
   });
 
@@ -1034,8 +1043,8 @@ function pushLoserAway(winner, loser) {
   const nx = dx / length;
   const ny = dy / length;
 
-  loser.x = clamp(loser.x + nx * 50, loser.radius, FIELD_WIDTH - loser.radius);
-  loser.y = clamp(loser.y + ny * 50, loser.radius, FIELD_HEIGHT - loser.radius);
+  loser.x = clamp(loser.x + nx * 90, loser.radius, FIELD_WIDTH - loser.radius);
+  loser.y = clamp(loser.y + ny * 90, loser.radius, FIELD_HEIGHT - loser.radius);
 }
 
 function tryResolveDuel(room) {
@@ -1116,6 +1125,7 @@ function resolveDuelOutcome(room, reason = "finished") {
 
   room.match.phase = "PLAYING";
   room.match.duel = null;
+  room.duelCooldownUntil = Date.now() + DUEL_COOLDOWN_MS;
 
   io.to(room.id).emit("duel-result", {
     winnerId,
@@ -1142,6 +1152,7 @@ function finishDuel(room, forcedWinnerId = null, reason = "finished") {
 
     room.match.phase = "PLAYING";
     room.match.duel = null;
+    room.duelCooldownUntil = Date.now() + DUEL_COOLDOWN_MS;
     room.match.notice = "Doi thu roi tran - ban gianh bong!";
 
     io.to(room.id).emit("duel-result", {
@@ -1347,6 +1358,26 @@ function removePlayerFromRoom(socketId) {
   }
 
   emitRoomListToAll();
+}
+
+function normalizeFixed11vs11Room(room) {
+  room.gameMode = "11vs11";
+  room.botCarrierId = null;
+  room.botPassTargetId = null;
+  room.practiceOwnerId = null;
+
+  Object.keys(room.players).forEach((playerId) => {
+    const player = room.players[playerId];
+    if (!player?.isBot) return;
+    if (room.ballHolderId === playerId) {
+      room.ballHolderId = null;
+      room.ball.x = FIELD_WIDTH / 2;
+      room.ball.y = FIELD_HEIGHT / 2;
+      room.ball.vx = 0;
+      room.ball.vy = 0;
+    }
+    delete room.players[playerId];
+  });
 }
 
 function joinRoom(socket, roomId, playerName, preferredTeam) {
@@ -1559,6 +1590,8 @@ io.on("connection", (socket) => {
       const newRoom = createEmptyRoom(roomId, "Phong 11 vs 11");
       newRoom.gameMode = "11vs11";
       rooms.set(roomId, newRoom);
+    } else {
+      normalizeFixed11vs11Room(rooms.get(roomId));
     }
     const profileName = socketProfiles.get(socket.id)?.playerName;
     joinRoom(socket, roomId, playerName || profileName, preferredTeam);
@@ -1644,6 +1677,10 @@ io.on("connection", (socket) => {
 
     const shooter = room.players[socket.id];
     if (!shooter) return;
+    if (isPlayerFrozen(shooter)) {
+      emitActionDenied(socket, "Ban dang bi dong bang, chua the sut bong.");
+      return;
+    }
 
     const numericX = Number(mouseX);
     const numericY = Number(mouseY);
@@ -1676,7 +1713,10 @@ io.on("connection", (socket) => {
       }
     }
 
-    if (room.match.phase !== "PLAYING") return;
+    if (room.match.phase !== "PLAYING") {
+      emitActionDenied(socket, "Chua the sut bong trong tinh huong nay.");
+      return;
+    }
     if (room.ballHolderId !== socket.id) return;
 
     if (!consumeEnergy(shooter, SHOOT_ENERGY_COST)) {
