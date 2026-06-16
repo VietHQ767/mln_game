@@ -292,19 +292,19 @@ function pickTeamForRoom(room) {
   return TEAM_BLUE;
 }
 
-// Xu ly doi nguoi choi chon; neu doi do day thi van cho phep chon doi con lai.
+// Xu ly doi nguoi choi chon; neu doi da day thi tu choi vao phong (khong auto doi doi).
 function resolvePreferredTeam(room, preferredTeam) {
   const { redFull, blueFull } = getTeamAvailability(room);
 
   if (preferredTeam === TEAM_RED || preferredTeam === TEAM_BLUE) {
-    // Neu doi nguoi choi chon da day thi tu dong doi sang doi con lai (neu co).
+    // Neu doi nguoi choi chon da day thi tu choi vao phong.
     if (preferredTeam === TEAM_RED && redFull) {
       if (blueFull) return { team: null, error: "Ca 2 doi trong phong da day." };
-      return { team: TEAM_BLUE, error: null };
+      return { team: null, error: "Doi Do da day. Hay chon Doi Xanh." };
     }
     if (preferredTeam === TEAM_BLUE && blueFull) {
       if (redFull) return { team: null, error: "Ca 2 doi trong phong da day." };
-      return { team: TEAM_RED, error: null };
+      return { team: null, error: "Doi Xanh da day. Hay chon Doi Do." };
     }
     return { team: preferredTeam, error: null };
   }
@@ -1377,9 +1377,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("create-room", ({ roomId, playerName, gameMode, preferredTeam, autoJoin = true }) => {
-    const finalRoomId =
+    let finalRoomId =
       String(roomId || "").trim() || `room-${Date.now()}-${++roomCounter}`;
-    const roomName = `Phong ${finalRoomId}`;
     // Chap nhan ca gia tri cu de tranh vo tuong thich.
     let normalizedMode = "11vs11";
     if (gameMode === "1vsBot") normalizedMode = "1vsBot";
@@ -1389,6 +1388,13 @@ io.on("connection", (socket) => {
     if (gameMode === "practice" || gameMode === "Practice") {
       normalizedMode = "practice";
     }
+
+    // 11 vs 11 luon su dung 1 phong duy nhat gom 22 nguoi (11/11).
+    if (normalizedMode === "11vs11") {
+      finalRoomId = FIXED_11VS11_ROOM_ID;
+    }
+
+    const roomName = normalizedMode === "11vs11" ? "Phong 11 vs 11" : `Phong ${finalRoomId}`;
 
     if (!rooms.has(finalRoomId)) {
       const newRoom = createEmptyRoom(finalRoomId, roomName);

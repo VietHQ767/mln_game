@@ -11,12 +11,21 @@ type GameMode = "1vsBot" | "11vs11" | "Practice";
 type TeamChoice = "RED" | "BLUE";
 
 // URL backend: local mac dinh, production lay tu Vercel env VITE_SOCKET_URL.
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3000";
+// Tu dong bo qua gia tri placeholder de tranh frontend ket noi sai server.
+const rawSocketUrl = String(import.meta.env.VITE_SOCKET_URL || "").trim();
+const isPlaceholderSocketUrl =
+  rawSocketUrl.length === 0 ||
+  rawSocketUrl.includes("your-backend.onrender.com") ||
+  rawSocketUrl.includes("your-app.vercel.app");
+const SOCKET_URL = isPlaceholderSocketUrl ? "http://localhost:3000" : rawSocketUrl;
 
 const socket: Socket = io(SOCKET_URL, {
   autoConnect: true,
   transports: ["websocket", "polling"]
 });
+
+// 11 vs 11 luon su dung 1 phong duy nhat.
+const FIXED_11VS11_ROOM_ID = "11vs11-room";
 
 const initialGameState: GameState = {
   myId: null,
@@ -35,6 +44,14 @@ export default function App() {
   const [practiceOpponents, setPracticeOpponents] = useState(1);
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
   const pendingNoticeRef = useRef<string | null>(null);
+  const [teamAvailability, setTeamAvailability] = useState({
+    exists: false,
+    redCount: 0,
+    blueCount: 0,
+    maxTeamSize: 11,
+    redFull: false,
+    blueFull: false
+  });
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [duelData, setDuelData] = useState<DuelPayload | null>(null);
   const [gkDuelData, setGkDuelData] = useState<GKDuelPayload | null>(null);
@@ -67,6 +84,41 @@ export default function App() {
   );
 
   useEffect(() => {
+    socket.on("connect_error", () => {
+      alert(`Khong the ket noi toi server (${SOCKET_URL}). Kiem tra backend va file .env.`);
+      setShowMenu(true);
+    });
+
+    socket.on("room-info", (payload: {
+      exists?: boolean;
+      redCount?: number;
+      blueCount?: number;
+      maxTeamSize?: number;
+      redFull?: boolean;
+      blueFull?: boolean;
+    }) => {
+      if (!payload?.exists) {
+        setTeamAvailability((prev) => ({
+          ...prev,
+          exists: false,
+          redCount: 0,
+          blueCount: 0,
+          redFull: false,
+          blueFull: false
+        }));
+        return;
+      }
+
+      setTeamAvailability({
+        exists: true,
+        redCount: payload.redCount ?? 0,
+        blueCount: payload.blueCount ?? 0,
+        maxTeamSize: payload.maxTeamSize ?? 11,
+        redFull: Boolean(payload.redFull),
+        blueFull: Boolean(payload.blueFull)
+      });
+    });
+
     socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
       setGameState({ ...payload, myId: payload.myId });
       // Chi an menu khi server xac nhan vao phong thanh cong.
@@ -109,6 +161,8 @@ export default function App() {
     });
 
     return () => {
+      socket.off("connect_error");
+      socket.off("room-info");
       socket.off("init");
       socket.off("gameState");
       socket.off("room-error");
@@ -120,6 +174,19 @@ export default function App() {
       socket.off("room-full");
     };
   }, []);
+
+  // Cap nhat thong tin so nguoi trong 2 doi khi dang o menu mode 11 vs 11.
+  useEffect(() => {
+    if (!showMenu || selectedMode !== "11vs11") return;
+
+    const request = () => {
+      socket.emit("request-room-info", { roomId: FIXED_11VS11_ROOM_ID });
+    };
+
+    request();
+    const intervalId = window.setInterval(request, 3000);
+    return () => window.clearInterval(intervalId);
+  }, [showMenu, selectedMode]);
 
   useEffect(() => {
     const emitInput = (next: typeof inputState) => {
@@ -264,6 +331,11 @@ export default function App() {
           playerName={playerName}
           selectedMode={selectedMode}
           selectedTeam={selectedTeam}
+            teamRedCount={teamAvailability.redCount}
+            teamBlueCount={teamAvailability.blueCount}
+            teamMaxSize={teamAvailability.maxTeamSize}
+            teamRedFull={teamAvailability.redFull}
+            teamBlueFull={teamAvailability.blueFull}
           practiceTeammates={practiceTeammates}
           practiceOpponents={practiceOpponents}
           onPlayerNameChange={setPlayerName}

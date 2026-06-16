@@ -7,6 +7,11 @@ interface MainMenuProps {
   playerName: string;
   selectedMode: GameMode | null;
   selectedTeam: TeamChoice;
+  teamRedCount: number;
+  teamBlueCount: number;
+  teamMaxSize: number;
+  teamRedFull: boolean;
+  teamBlueFull: boolean;
   practiceTeammates: number;
   practiceOpponents: number;
   onPlayerNameChange: (name: string) => void;
@@ -24,6 +29,11 @@ export default function MainMenu({
   playerName,
   selectedMode,
   selectedTeam,
+  teamRedCount,
+  teamBlueCount,
+  teamMaxSize,
+  teamRedFull,
+  teamBlueFull,
   practiceTeammates,
   practiceOpponents,
   onPlayerNameChange,
@@ -37,6 +47,7 @@ export default function MainMenu({
 }: MainMenuProps) {
   const showRoomTools = selectedMode === "11vs11";
   const showPracticeTools = selectedMode === "Practice";
+  const selectedTeamFull = selectedTeam === "RED" ? teamRedFull : teamBlueFull;
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/75 backdrop-blur-md">
@@ -101,45 +112,51 @@ export default function MainMenu({
         {showRoomTools && (
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Chon doi</h3>
+            <p className="mb-3 text-xs text-slate-300">
+              Doi Do: <span className="font-semibold text-red-300">{teamRedCount}</span> / {teamMaxSize}{" "}
+              | Doi Xanh: <span className="font-semibold text-blue-300">{teamBlueCount}</span> / {teamMaxSize}
+            </p>
             <div className="mb-3 grid gap-2 md:grid-cols-2">
               <button
                 type="button"
                 onClick={() => onSelectTeam("RED")}
+                disabled={teamRedFull}
                 className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                   selectedTeam === "RED"
                     ? "border-red-300 bg-red-500/25 text-white"
                     : "border-slate-600 bg-slate-800 text-slate-100 hover:border-red-300/70"
-                }`}
+                } ${teamRedFull ? "cursor-not-allowed opacity-60" : ""}`}
               >
-                <span className="font-bold text-red-300">Doi Do</span>
+                <span className="font-bold text-red-300">
+                  Doi Do ({teamRedCount}/{teamMaxSize})
+                </span>
               </button>
               <button
                 type="button"
                 onClick={() => onSelectTeam("BLUE")}
+                disabled={teamBlueFull}
                 className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                   selectedTeam === "BLUE"
                     ? "border-blue-300 bg-blue-500/25 text-white"
                     : "border-slate-600 bg-slate-800 text-slate-100 hover:border-blue-300/70"
-                }`}
+                } ${teamBlueFull ? "cursor-not-allowed opacity-60" : ""}`}
               >
-                <span className="font-bold text-blue-300">Doi Xanh</span>
+                <span className="font-bold text-blue-300">
+                  Doi Xanh ({teamBlueCount}/{teamMaxSize})
+                </span>
               </button>
             </div>
 
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="grid gap-2 md:grid-cols-1">
               <button
                 type="button"
                 onClick={onJoinFixedRoom}
-                className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_18px_rgba(251,191,36,0.25)] transition hover:brightness-110"
+                disabled={selectedTeamFull}
+                className={`rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition ${
+                  selectedTeamFull ? "cursor-not-allowed opacity-55" : "hover:brightness-110"
+                }`}
               >
-                Tao phong
-              </button>
-              <button
-                type="button"
-                onClick={onJoinFixedRoom}
-                className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
-              >
-                Vao phong
+                {selectedTeamFull ? "Doi da day" : "Vao phong"}
               </button>
             </div>
           </div>
