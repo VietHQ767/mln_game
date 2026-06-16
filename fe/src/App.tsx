@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
+import BackgroundMusic from "./components/BackgroundMusic";
+import ButtonSoundEffects from "./components/ButtonSoundEffects";
 import GameCanvas from "./components/GameCanvas";
+import SettingsButton from "./components/SettingsButton";
+import HomePage from "./components/HomePage";
 import MainMenu from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
@@ -10,7 +14,7 @@ import type { DuelPayload, GameState } from "./types";
 type GameMode = "4vs4";
 type TeamChoice = "RED" | "BLUE";
 
-// URL backend: production lay tu Vercel env VITE_BACKEND_URL, local mac dinh localhost:3000.
+// URL backend: production lấy từ Vercel env VITE_BACKEND_URL, local mặc định localhost:3000.
 const LOCAL_BACKEND_URL = "http://localhost:3000";
 const rawBackendUrl = String(
   import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_SOCKET_URL || ""
@@ -26,7 +30,7 @@ const socket: Socket = io(SOCKET_URL, {
   transports: ["websocket", "polling"]
 });
 
-// 4 vs 4 luon su dung 1 phong duy nhat.
+// 4 vs 4 luôn sử dụng 1 phòng duy nhất.
 const FIXED_4VS4_ROOM_ID = "4vs4-room";
 
 const initialGameState: GameState = {
@@ -40,7 +44,8 @@ const initialGameState: GameState = {
 };
 
 export default function App() {
-  const [showMenu, setShowMenu] = useState(true);
+  const [showHomePage, setShowHomePage] = useState(true);
+  const [showMenu, setShowMenu] = useState(false);
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
   const [selectedMode, setSelectedMode] = useState<GameMode | null>("4vs4");
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
@@ -86,7 +91,7 @@ export default function App() {
 
   useEffect(() => {
     socket.on("connect_error", () => {
-      alert(`Khong the ket noi toi server (${SOCKET_URL}). Kiem tra backend va file .env.`);
+      alert(`Không thể kết nối tới server (${SOCKET_URL}). Kiểm tra backend và file .env.`);
       setShowMenu(true);
     });
 
@@ -126,7 +131,7 @@ export default function App() {
         joinTimeoutRef.current = null;
       }
       setGameState({ ...payload, myId: payload.myId });
-      // Chi an menu khi server xac nhan vao phong thanh cong.
+      // Chỉ ẩn menu khi server xác nhận vào phòng thành công.
       setShowMenu(false);
       const notice = pendingNoticeRef.current;
       if (notice) {
@@ -153,7 +158,7 @@ export default function App() {
       if (payload?.message) alert(payload.message);
     });
     socket.on("room-full", (data: { message?: string }) => {
-      alert(data?.message ?? "Phong da day.");
+      alert(data?.message ?? "Phòng đã đầy.");
       setShowMenu(true);
     });
 
@@ -170,7 +175,7 @@ export default function App() {
     };
   }, []);
 
-  // Cap nhat thong tin so nguoi trong 2 doi khi dang o menu mode 4 vs 4.
+  // Cập nhật thông tin số người trong 2 đội khi đang ở menu mode 4 vs 4.
   useEffect(() => {
     if (!showMenu || selectedMode !== "4vs4") return;
 
@@ -254,25 +259,25 @@ export default function App() {
 
   const handleJoinFixedRoom = () => {
     if (selectedMode !== "4vs4") {
-      alert("Hay chon che do 4 vs 4 truoc khi vao phong.");
+      alert("Hãy chọn chế độ 4 vs 4 trước khi vào phòng.");
       return;
     }
     if (!socket.connected) {
-      alert(`Chua ket noi server (${SOCKET_URL}). Kiem tra backend dang chay.`);
+      alert(`Chưa kết nối server (${SOCKET_URL}). Kiểm tra backend đang chạy.`);
       return;
     }
     const finalName = playerName.trim() || "Player";
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
-    pendingNoticeRef.current = "Vao phong thanh cong!";
+    pendingNoticeRef.current = "Vào phòng thành công!";
     if (joinTimeoutRef.current) {
       window.clearTimeout(joinTimeoutRef.current);
     }
     joinTimeoutRef.current = window.setTimeout(() => {
       joinTimeoutRef.current = null;
       alert(
-        "Khong nhan phan hoi tu server khi vao phong. Hay restart backend (npm run dev trong be/) hoac doi deploy backend moi."
+        "Không nhận phản hồi từ server khi vào phòng. Hãy restart backend (npm run dev trong be/) hoặc đợi deploy backend mới."
       );
       setShowMenu(true);
     }, 8000);
@@ -285,12 +290,17 @@ export default function App() {
 
   const handleBackToMenu = () => {
     setShowMenu(true);
+    setShowHomePage(false);
+  };
+
+  const handleStartFromHome = () => {
+    setShowHomePage(false);
+    setShowMenu(true);
   };
 
   const handleExit = () => {
-    window.close();
-    document.body.innerHTML =
-      "<h2 style='color:white;text-align:center;margin-top:20vh'>Da thoat game.</h2>";
+    setShowHomePage(true);
+    setShowMenu(false);
   };
 
   const submitAnswer = (answer: "A" | "B" | "C" | "D") => {
@@ -336,8 +346,14 @@ export default function App() {
 
   return (
     <>
-      {showMenu ? (
-        <MainMenu
+      <BackgroundMusic active={showHomePage || showMenu} />
+      <ButtonSoundEffects active={showHomePage || showMenu} />
+      <SettingsButton active={showHomePage || showMenu} />
+      {showHomePage ? (
+        <HomePage onStart={handleStartFromHome} />
+      ) : showMenu ? (
+        <div className="relative min-h-screen">
+          <MainMenu
           playerName={playerName}
           selectedMode={selectedMode}
           selectedTeam={selectedTeam}
@@ -352,6 +368,7 @@ export default function App() {
           onJoinFixedRoom={handleJoinFixedRoom}
           onExit={handleExit}
         />
+        </div>
       ) : (
         <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
           <div className="relative min-h-screen w-full">
@@ -372,47 +389,47 @@ export default function App() {
             >
               {gameState.match.notice ||
                 (!gameState.match.kickoffDone && gameState.match.phase === "PLAYING"
-                  ? "Cho doi ca hai doi de bat dau tran dau..."
+                  ? "Chờ đợi cả hai đội để bắt đầu trận đấu..."
                   : gameState.match.phase === "PLAYING"
-                  ? "Bong dang song"
+                  ? "Bóng đang sống"
                   : gameState.match.phase === "DUEL" && gameState.match.duel?.isGoalQuiz
-                    ? "Xac nhan ghi ban - tra loi cau hoi!"
+                    ? "Xác nhận ghi bàn - trả lời câu hỏi!"
                     : gameState.match.phase === "DUEL" && gameState.match.duel?.isKickoff
-                    ? "Tranh quyen giu bong - tra loi cau hoi!"
+                    ? "Tranh quyền giữ bóng - trả lời câu hỏi!"
                     : gameState.match.phase === "DUEL"
-                    ? "Dang duel tranh chap bong"
+                    ? "Đang duel tranh chấp bóng"
                     : gameState.match.phase === "THROW_IN"
                       ? gameState.match.setPiece?.takerId === gameState.myId
-                        ? "Nem bien - click vao dong doi de chuyen bong"
-                        : "Nem bien - di chuyen nhung khong lai gan nguoi nem"
+                        ? "Ném biên - click vào đồng đội để chuyền bóng"
+                        : "Ném biên - di chuyển nhưng không lại gần người ném"
                       : gameState.match.phase === "CORNER_KICK"
                         ? gameState.match.setPiece?.takerId === gameState.myId
-                          ? "Phat goc - click chuot de da (hoac SPACE)"
-                          : "Phat goc - di chuyen nhung khong lai gan nguoi da phat"
+                          ? "Phạt góc - click chuột để đá (hoặc SPACE)"
+                          : "Phạt góc - di chuyển nhưng không lại gần người đá phạt"
                         : gameState.match.phase === "GOAL_KICK"
-                          ? "Dang phat bong len"
+                          ? "Đang phát bóng lên"
                           : gameState.match.phase === "POST_GOAL"
                             ? gameState.match.postGoal?.receiverId === gameState.myId
-                              ? "Dung truoc khung thanh - cho 3 giay de tiep tuc"
-                              : "Ghi ban - cho 3 giay, cau thu ve vi tri cu"
+                              ? "Đứng trước khung thành - chờ 3 giây để tiếp tục"
+                              : "Ghi bàn - chờ 3 giây, cầu thủ về vị trí cũ"
                           : gameState.match.phase === "FINISHED"
-                            ? gameState.match.notice || "Tran dau da ket thuc"
-                          : "Bong dang song")}
+                            ? gameState.match.notice || "Trận đấu đã kết thúc"
+                          : "Bóng đang sống")}
             </div>
             {gameState.match.phase === "FINISHED" && (
               <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
                 <div className="w-[min(92vw,24rem)] rounded-2xl border border-amber-400/40 bg-slate-900 p-6 text-center shadow-2xl">
-                  <h2 className="mb-2 text-2xl font-bold text-amber-300">Ket thuc tran dau</h2>
+                  <h2 className="mb-2 text-2xl font-bold text-amber-300">Kết thúc trận đấu</h2>
                   <p className="mb-1 text-lg font-semibold text-white">
                     {gameState.match.winnerTeam === "RED"
-                      ? "Doi Do thang!"
+                      ? "Đội Đỏ thắng!"
                       : gameState.match.winnerTeam === "BLUE"
-                        ? "Doi Xanh thang!"
-                        : "Hoa?"}
+                        ? "Đội Xanh thắng!"
+                        : "Hòa?"}
                   </p>
                   <p className="mb-6 text-sm text-slate-300">
-                    Ty so: {gameState.score?.RED ?? 0} - {gameState.score?.BLUE ?? 0}
-                    {gameState.match.winTarget ? ` (muc tieu ${gameState.match.winTarget} diem)` : ""}
+                    Tỷ số: {gameState.score?.RED ?? 0} - {gameState.score?.BLUE ?? 0}
+                    {gameState.match.winTarget ? ` (mục tiêu ${gameState.match.winTarget} điểm)` : ""}
                   </p>
                   <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
                     <button
@@ -420,14 +437,14 @@ export default function App() {
                       onClick={handlePlayAgain}
                       className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
                     >
-                      Choi lai
+                      Chơi lại
                     </button>
                     <button
                       type="button"
                       onClick={handleBackToMenu}
                       className="rounded-lg bg-slate-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-600"
                     >
-                      Ve menu
+                      Về menu
                     </button>
                   </div>
                 </div>

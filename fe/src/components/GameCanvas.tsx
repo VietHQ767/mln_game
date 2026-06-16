@@ -190,7 +190,7 @@ export default function GameCanvas({ gameState, onShootBall, onPassBall }: GameC
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = "#ffe082";
       ctx.font = "bold 28px Arial";
-      ctx.fillText("TRANH CHAP BONG", canvas.width / 2, sy(55));
+      ctx.fillText("TRANH CHẤP BÓNG", canvas.width / 2, sy(55));
     }
   }, [gameState]);
 

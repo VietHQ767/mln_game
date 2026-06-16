@@ -18,7 +18,7 @@ export default function QuizModal({ duelData, answered, onSubmitAnswer }: QuizMo
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75">
       <div className="w-[92vw] max-w-2xl rounded-2xl border border-slate-600 bg-slate-900 p-6 shadow-2xl">
         <h2 className="mb-2 text-center text-2xl font-bold text-amber-300">
-          {isGoal ? "Xac nhan ghi ban" : isKickoff ? "Bat dau tran dau" : "Tranh chap bong"}
+          {isGoal ? "Xác nhận ghi bàn" : isKickoff ? "Bắt đầu trận đấu" : "Tranh chấp bóng"}
         </h2>
         <p className="mb-5 text-center text-slate-100">{duelData.question.text}</p>
 
@@ -37,12 +37,12 @@ export default function QuizModal({ duelData, answered, onSubmitAnswer }: QuizMo
 
         <p className="mt-4 text-center text-sm text-slate-300">
           {answered
-            ? "Dang xac nhan ket qua..."
+            ? "Đang xác nhận kết quả..."
             : isGoal
-              ? "Tra loi dung de ghi ban. Sai se mat ban va doi thu phat bong len."
+              ? "Trả lời đúng để ghi bàn. Sai sẽ mất bàn và đối thủ phát bóng lên."
               : isKickoff
-                ? "Tra loi nhanh va dung de doi cua ban giu bong."
-                : "Tra loi nhanh va dung de giu bong. Sai/cham se bi dung yen 3 giay."}
+                ? "Trả lời nhanh và đúng để đội của bạn giữ bóng."
+                : "Trả lời nhanh và đúng để giữ bóng. Sai/chậm sẽ bị đứng yên 3 giây."}
         </p>
       </div>
     </div>
