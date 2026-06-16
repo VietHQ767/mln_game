@@ -34,7 +34,7 @@ const initialGameState: GameState = {
   players: {},
   ball: { x: 400, y: 250, radius: 9 },
   field: { width: 800, height: 500 },
-  match: { phase: "PLAYING" },
+  match: { phase: "PLAYING", kickoffDone: false },
   ballHolderId: null,
   score: { RED: 0, BLUE: 0 }
 };
@@ -319,9 +319,13 @@ export default function App() {
               }`}
             >
               {gameState.match.notice ||
-                (gameState.match.phase === "PLAYING"
+                (!gameState.match.kickoffDone && gameState.match.phase === "PLAYING"
+                  ? "Cho doi ca hai doi de bat dau tran dau..."
+                  : gameState.match.phase === "PLAYING"
                   ? "Bong dang song"
-                  : gameState.match.phase === "DUEL"
+                  : gameState.match.phase === "DUEL" && gameState.match.duel?.isKickoff
+                    ? "Tranh quyen giu bong - tra loi cau hoi!"
+                    : gameState.match.phase === "DUEL"
                     ? "Dang duel tranh chap bong"
                     : gameState.match.phase === "THROW_IN"
                       ? gameState.match.setPiece?.takerId === gameState.myId
@@ -331,7 +335,9 @@ export default function App() {
                         ? gameState.match.setPiece?.takerId === gameState.myId
                           ? "Phat goc - click chuot de da (hoac SPACE)"
                           : "Dang phat goc"
-                        : "Dang phat bong len - bam SPACE de da")}
+                        : gameState.match.phase === "GOAL_KICK"
+                          ? "Dang phat bong len"
+                          : "Bong dang song")}
             </div>
             <QuizModal duelData={duelData} answered={hasAnswered} onSubmitAnswer={submitAnswer} />
             <EnergyCharger
