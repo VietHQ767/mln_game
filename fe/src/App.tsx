@@ -279,6 +279,14 @@ export default function App() {
     socket.emit("join-fixed-4vs4", { playerName: finalName, preferredTeam: selectedTeam });
   };
 
+  const handlePlayAgain = () => {
+    socket.emit("reset-match");
+  };
+
+  const handleBackToMenu = () => {
+    setShowMenu(true);
+  };
+
   const handleExit = () => {
     window.close();
     document.body.innerHTML =
@@ -352,7 +360,11 @@ export default function App() {
               onShootBall={handleShootBall}
               onPassBall={handlePassBall}
             />
-            <ScoreBoard red={gameState.score?.RED ?? 0} blue={gameState.score?.BLUE ?? 0} />
+            <ScoreBoard
+              red={gameState.score?.RED ?? 0}
+              blue={gameState.score?.BLUE ?? 0}
+              winTarget={gameState.match.winTarget}
+            />
             <div
               className={`pointer-events-none fixed left-1/2 z-20 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur ${
                 showEnergyCharger ? "top-44" : "top-4"
@@ -363,7 +375,9 @@ export default function App() {
                   ? "Cho doi ca hai doi de bat dau tran dau..."
                   : gameState.match.phase === "PLAYING"
                   ? "Bong dang song"
-                  : gameState.match.phase === "DUEL" && gameState.match.duel?.isKickoff
+                  : gameState.match.phase === "DUEL" && gameState.match.duel?.isGoalQuiz
+                    ? "Xac nhan ghi ban - tra loi cau hoi!"
+                    : gameState.match.phase === "DUEL" && gameState.match.duel?.isKickoff
                     ? "Tranh quyen giu bong - tra loi cau hoi!"
                     : gameState.match.phase === "DUEL"
                     ? "Dang duel tranh chap bong"
@@ -377,8 +391,48 @@ export default function App() {
                           : "Phat goc - di chuyen nhung khong lai gan nguoi da phat"
                         : gameState.match.phase === "GOAL_KICK"
                           ? "Dang phat bong len"
+                          : gameState.match.phase === "POST_GOAL"
+                            ? gameState.match.postGoal?.receiverId === gameState.myId
+                              ? "Dung truoc khung thanh - cho 3 giay de tiep tuc"
+                              : "Ghi ban - cho 3 giay, cau thu ve vi tri cu"
+                          : gameState.match.phase === "FINISHED"
+                            ? gameState.match.notice || "Tran dau da ket thuc"
                           : "Bong dang song")}
             </div>
+            {gameState.match.phase === "FINISHED" && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+                <div className="w-[min(92vw,24rem)] rounded-2xl border border-amber-400/40 bg-slate-900 p-6 text-center shadow-2xl">
+                  <h2 className="mb-2 text-2xl font-bold text-amber-300">Ket thuc tran dau</h2>
+                  <p className="mb-1 text-lg font-semibold text-white">
+                    {gameState.match.winnerTeam === "RED"
+                      ? "Doi Do thang!"
+                      : gameState.match.winnerTeam === "BLUE"
+                        ? "Doi Xanh thang!"
+                        : "Hoa?"}
+                  </p>
+                  <p className="mb-6 text-sm text-slate-300">
+                    Ty so: {gameState.score?.RED ?? 0} - {gameState.score?.BLUE ?? 0}
+                    {gameState.match.winTarget ? ` (muc tieu ${gameState.match.winTarget} diem)` : ""}
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+                    <button
+                      type="button"
+                      onClick={handlePlayAgain}
+                      className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
+                    >
+                      Choi lai
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBackToMenu}
+                      className="rounded-lg bg-slate-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-600"
+                    >
+                      Ve menu
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             <QuizModal duelData={duelData} answered={hasAnswered} onSubmitAnswer={submitAnswer} />
             <EnergyCharger
               open={showEnergyCharger}

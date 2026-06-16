@@ -12,12 +12,13 @@ export default function QuizModal({ duelData, answered, onSubmitAnswer }: QuizMo
   const answers: Array<"A" | "B" | "C" | "D"> = ["A", "B", "C", "D"];
 
   const isKickoff = duelData.kind === "kickoff";
+  const isGoal = duelData.kind === "goal";
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75">
       <div className="w-[92vw] max-w-2xl rounded-2xl border border-slate-600 bg-slate-900 p-6 shadow-2xl">
         <h2 className="mb-2 text-center text-2xl font-bold text-amber-300">
-          {isKickoff ? "Bat dau tran dau" : "Tranh chap bong"}
+          {isGoal ? "Xac nhan ghi ban" : isKickoff ? "Bat dau tran dau" : "Tranh chap bong"}
         </h2>
         <p className="mb-5 text-center text-slate-100">{duelData.question.text}</p>
 
@@ -36,10 +37,12 @@ export default function QuizModal({ duelData, answered, onSubmitAnswer }: QuizMo
 
         <p className="mt-4 text-center text-sm text-slate-300">
           {answered
-            ? "Da gui dap an, dang cho doi thu..."
-            : isKickoff
-              ? "Tra loi nhanh va dung de doi cua ban giu bong."
-              : "Tra loi nhanh va dung de giu bong. Sai/cham se bi dung yen 3 giay."}
+            ? "Dang xac nhan ket qua..."
+            : isGoal
+              ? "Tra loi dung de ghi ban. Sai se mat ban va doi thu phat bong len."
+              : isKickoff
+                ? "Tra loi nhanh va dung de doi cua ban giu bong."
+                : "Tra loi nhanh va dung de giu bong. Sai/cham se bi dung yen 3 giay."}
         </p>
       </div>
     </div>

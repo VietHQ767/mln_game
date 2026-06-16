@@ -70,6 +70,8 @@ const DUEL_TRIGGER_DISTANCE = 30;
 const DUEL_TIMEOUT_MS = 10000;
 const DUEL_FREEZE_MS = 3000;
 const DUEL_COOLDOWN_MS = 3000;
+const MATCH_WIN_SCORE = 15;
+const POST_GOAL_WAIT_MS = 3000;
 const BOT_SPEED = 2.1;
 
 const TEAM_RED = "RED";
@@ -189,7 +191,16 @@ function enforceSetPieceKeepOut(taker, player) {
   applyMovementBounds(player);
 }
 
+function isGameplayBlocked(room) {
+  return room.match.phase === "FINISHED" || room.match.phase === "POST_GOAL";
+}
+
 function applyMoveInput(room, player, inputState) {
+  if (isGameplayBlocked(room)) {
+    player.input = { up: false, down: false, left: false, right: false };
+    return;
+  }
+
   const setPiece = room.match.setPiece;
   if (
     setPiece?.takerId === player.id &&
@@ -301,7 +312,9 @@ function createEmptyRoom(roomId, roomName) {
       duel: null,
       notice: "",
       setPiece: null,
-      kickoffDone: false
+      kickoffDone: false,
+      winnerTeam: null,
+      postGoal: null
     }
   };
 }
@@ -410,6 +423,54 @@ function resetPlayersToHomePositions(room) {
     player.direction = { dx: player.team === TEAM_RED ? 1 : -1, dy: 0 };
     applyMovementBounds(player);
   });
+}
+
+function endMatch(room, winnerTeam) {
+  room.match.phase = "FINISHED";
+  room.match.winnerTeam = winnerTeam;
+  room.match.duel = null;
+  room.match.setPiece = null;
+  room.match.postGoal = null;
+  room.ballHolderId = null;
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+  room.botPassTargetId = null;
+  room.botCarrierId = null;
+  const winnerLabel = winnerTeam === TEAM_RED ? "Doi Do" : "Doi Xanh";
+  room.match.notice = `${winnerLabel} thang tran ${room.score.RED}-${room.score.BLUE}! Dat ${MATCH_WIN_SCORE} diem.`;
+  freezeAllInputs(room);
+}
+
+function registerGoal(room, scoringTeam) {
+  room.score[scoringTeam] += 1;
+  if (room.score[scoringTeam] >= MATCH_WIN_SCORE) {
+    endMatch(room, scoringTeam);
+    return true;
+  }
+  awardBallAfterGoal(room, scoringTeam);
+  return false;
+}
+
+function resetMatch(room) {
+  room.score = { RED: 0, BLUE: 0 };
+  room.match.phase = "PLAYING";
+  room.match.duel = null;
+  room.match.notice = "Tran dau moi bat dau!";
+  room.match.setPiece = null;
+  room.match.kickoffDone = false;
+  room.match.winnerTeam = null;
+  room.match.postGoal = null;
+  room.ballHolderId = null;
+  room.ball.x = FIELD_WIDTH / 2;
+  room.ball.y = FIELD_HEIGHT / 2;
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+  room.lastTouchTeam = null;
+  room.lastTouchPlayerId = null;
+  room.botPassTargetId = null;
+  room.botCarrierId = null;
+  resetPlayersToHomePositions(room);
+  maybeStartKickoff(room);
 }
 
 function spawnForTeam(team) {
@@ -614,10 +675,20 @@ function buildRoomGameState(room) {
             holderId: room.match.duel.holderId,
             challengerId: room.match.duel.challengerId,
             questionId: room.match.duel.questionId,
-            isKickoff: Boolean(room.match.duel.isKickoff)
+            isKickoff: Boolean(room.match.duel.isKickoff),
+            isGoalQuiz: Boolean(room.match.duel.isGoalQuiz)
           }
         : null,
-      kickoffDone: Boolean(room.match.kickoffDone)
+      kickoffDone: Boolean(room.match.kickoffDone),
+      winnerTeam: room.match.winnerTeam ?? null,
+      winTarget: MATCH_WIN_SCORE,
+      postGoal: room.match.postGoal
+        ? {
+            receiverId: room.match.postGoal.receiverId,
+            receivingTeam: room.match.postGoal.receivingTeam,
+            resumeAt: room.match.postGoal.resumeAt
+          }
+        : null
     },
     ballHolderId: room.ballHolderId,
     score: room.score
@@ -807,6 +878,93 @@ function startKickoffDuel(room, redRep, blueRep) {
   io.to(blueRep.id).emit("start-duel", duelPayload);
 }
 
+function resolveGoalShooter(room, scoringTeam, goalSpot) {
+  const lastTouch = room.lastTouchPlayerId ? room.players[room.lastTouchPlayerId] : null;
+  if (lastTouch && lastTouch.team === scoringTeam && !lastTouch.isBot) {
+    return lastTouch;
+  }
+
+  const humans = Object.values(room.players).filter(
+    (player) => player.team === scoringTeam && !player.isBot
+  );
+  if (humans.length > 0) {
+    return humans.reduce((nearest, player) => {
+      if (!nearest) return player;
+      return getDistance(player, goalSpot) < getDistance(nearest, goalSpot) ? player : nearest;
+    }, null);
+  }
+
+  return getSetPieceTaker(room, scoringTeam, goalSpot);
+}
+
+function startGoalQuiz(room, scoringTeam, goalSpot) {
+  const defendingTeam = getOpponentTeam(scoringTeam);
+  const shooter = resolveGoalShooter(room, scoringTeam, goalSpot);
+
+  if (!shooter) {
+    registerGoal(room, scoringTeam);
+    return;
+  }
+
+  if (shooter.isBot) {
+    const willScore = Math.random() < 0.45;
+    if (willScore) {
+      registerGoal(room, scoringTeam);
+    } else {
+      const sideLabel = goalSpot.x < PLAY_MIN_X ? "ben trai" : "ben phai";
+      awardGoalKick(
+        room,
+        defendingTeam,
+        goalSpot,
+        `${defendingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} phat bong len trong vong cam ${sideLabel}!`
+      );
+      room.match.notice = `${scoringTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} sut hong - doi thu phat bong len!`;
+    }
+    return;
+  }
+
+  const question = pickRandomQuestion();
+  const startAt = Date.now();
+  const exitOnLeft = goalSpot.x < PLAY_MIN_X;
+
+  room.ballHolderId = null;
+  room.ball.x = clamp(goalSpot.x, PLAY_MIN_X, PLAY_MAX_X);
+  room.ball.y = clamp(goalSpot.y, GOAL_Y_MIN, GOAL_Y_MAX);
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+
+  room.match.phase = "DUEL";
+  room.match.notice = `${scoringTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} ghi ban? Tra loi cau hoi de xac nhan!`;
+  room.match.duel = {
+    holderId: shooter.id,
+    challengerId: shooter.id,
+    questionId: question.id,
+    correctAnswer: question.correctAnswer,
+    startAt,
+    answers: {},
+    isGoalQuiz: true,
+    scoringTeam,
+    defendingTeam,
+    goalSpot: { x: goalSpot.x, y: goalSpot.y },
+    exitOnLeft,
+    botOnlyDuel: false,
+    botParticipantId: null,
+    botAnswerAt: null,
+    botWillBeCorrect: false
+  };
+
+  io.to(shooter.id).emit("start-duel", {
+    duelId: `goal-${room.id}-${question.id}-${startAt}`,
+    kind: "goal",
+    question: {
+      id: question.id,
+      text: question.text,
+      options: question.options
+    },
+    players: [shooter.id]
+  });
+}
+
 function captureBallIfTouching(room) {
   if (!room.match.kickoffDone) return;
   if (room.ballHolderId) return;
@@ -859,40 +1017,116 @@ function getCornerKickSpot(exitOnLeft, outY) {
   };
 }
 
+function getGoalFrontSpot(team, goalY = (GOAL_Y_MIN + GOAL_Y_MAX) / 2) {
+  const onLeftGoal = team === TEAM_RED;
+  const standX = onLeftGoal ? PLAY_MIN_X + 50 : PLAY_MAX_X - 50;
+  const standY = clamp(goalY, GOAL_Y_MIN + PLAYER_RADIUS, GOAL_Y_MAX - PLAYER_RADIUS);
+  return { x: standX, y: standY, faceDx: onLeftGoal ? 1 : -1 };
+}
+
+function placePostGoalReceiver(room, receiver) {
+  const spot = getGoalFrontSpot(receiver.team);
+  receiver.x = clamp(spot.x, PLAY_MIN_X + receiver.radius, PLAY_MAX_X - receiver.radius);
+  receiver.y = clamp(spot.y, PLAY_MIN_Y + receiver.radius, PLAY_MAX_Y - receiver.radius);
+  receiver.direction = { dx: spot.faceDx, dy: 0 };
+  receiver.input = { up: false, down: false, left: false, right: false };
+}
+
+function enforcePostGoalPositions(room) {
+  const postGoal = room.match.postGoal;
+  if (!postGoal) return;
+
+  Object.values(room.players).forEach((player) => {
+    if (player.id === postGoal.receiverId) return;
+
+    if (player.homeX == null || player.homeY == null) {
+      const spawn = spawnForTeam(player.team);
+      player.homeX = spawn.x;
+      player.homeY = spawn.y;
+    }
+
+    player.x = player.homeX;
+    player.y = player.homeY;
+    player.input = { up: false, down: false, left: false, right: false };
+    applyMovementBounds(player);
+  });
+
+  const receiver = postGoal.receiverId ? room.players[postGoal.receiverId] : null;
+  if (receiver) {
+    placePostGoalReceiver(room, receiver);
+    room.ballHolderId = receiver.id;
+    room.ball.vx = 0;
+    room.ball.vy = 0;
+    updateBallToHolder(room);
+    room.lastTouchTeam = receiver.team;
+    room.lastTouchPlayerId = receiver.id;
+  }
+}
+
+function finishPostGoalReset(room) {
+  const postGoal = room.match.postGoal;
+  const receivingTeam = postGoal?.receivingTeam;
+  room.match.postGoal = null;
+  room.match.phase = "PLAYING";
+  room.match.notice = `${receivingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} nhan bong truoc khung thanh - tiep tuc tran dau!`;
+}
+
+function updatePostGoalPhase(room) {
+  const postGoal = room.match.postGoal;
+  if (!postGoal) {
+    room.match.phase = "PLAYING";
+    return;
+  }
+
+  enforcePostGoalPositions(room);
+  freezeAllInputs(room);
+
+  const remaining = postGoal.resumeAt - Date.now();
+  if (remaining > 0) {
+    const secondsLeft = Math.max(1, Math.ceil(remaining / 1000));
+    const scoredLabel = postGoal.scoredTeam === TEAM_RED ? "Doi Do" : "Doi Xanh";
+    const receivingLabel = postGoal.receivingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh";
+    room.match.notice = `${scoredLabel} ghi ban! Cho ${secondsLeft}s - ${receivingLabel} chuan bi truoc khung thanh.`;
+    return;
+  }
+
+  finishPostGoalReset(room);
+}
+
 function awardBallAfterGoal(room, scoredTeam) {
   const receivingTeam = getOpponentTeam(scoredTeam);
+  const goalSpot = getGoalFrontSpot(receivingTeam);
 
   resetPlayersToHomePositions(room);
 
-  const center = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2 };
   const receiver =
-    getSetPieceTaker(room, receivingTeam, center) || getNearestPlayerInTeam(room, receivingTeam, center);
+    getSetPieceTaker(room, receivingTeam, goalSpot) ||
+    getNearestPlayerInTeam(room, receivingTeam, goalSpot);
 
-  room.match.phase = "PLAYING";
+  room.match.phase = "POST_GOAL";
   room.match.setPiece = null;
   room.match.duel = null;
+  room.match.postGoal = {
+    scoredTeam,
+    receivingTeam,
+    receiverId: receiver?.id ?? null,
+    resumeAt: Date.now() + POST_GOAL_WAIT_MS
+  };
   room.botPassTargetId = null;
 
   if (!receiver) {
     room.ballHolderId = null;
-    room.ball.x = FIELD_WIDTH / 2;
-    room.ball.y = FIELD_HEIGHT / 2;
+    room.ball.x = goalSpot.x;
+    room.ball.y = goalSpot.y;
     room.ball.vx = 0;
     room.ball.vy = 0;
     room.lastTouchPlayerId = null;
     room.botCarrierId = null;
+    freezeAllInputs(room);
     return;
   }
 
-  const offsetX = receivingTeam === TEAM_RED ? -35 : 35;
-  receiver.x = clamp(
-    FIELD_WIDTH / 2 + offsetX,
-    PLAY_MIN_X + receiver.radius,
-    PLAY_MAX_X - receiver.radius
-  );
-  receiver.y = clamp(FIELD_HEIGHT / 2, PLAY_MIN_Y + receiver.radius, PLAY_MAX_Y - receiver.radius);
-  receiver.direction = { dx: receivingTeam === TEAM_RED ? 1 : -1, dy: 0 };
-
+  placePostGoalReceiver(room, receiver);
   room.ballHolderId = receiver.id;
   room.ball.vx = 0;
   room.ball.vy = 0;
@@ -906,9 +1140,10 @@ function awardBallAfterGoal(room, scoredTeam) {
     room.botCarrierId = null;
   }
 
-  room.match.notice = `Vaoo! ${scoredTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} ghi ban! ${
-    receivingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"
-  } nhan bong o giua san.`;
+  freezeAllInputs(room);
+  const scoredLabel = scoredTeam === TEAM_RED ? "Doi Do" : "Doi Xanh";
+  const receivingLabel = receivingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh";
+  room.match.notice = `Vaoo! ${scoredLabel} ghi ban! Cho 3 giay - ${receivingLabel} chuan bi truoc khung thanh.`;
 }
 
 function getNearestPlayerInTeam(room, team, spot) {
@@ -1132,8 +1367,7 @@ function handleBoundaryChecks(room) {
   const inGoalMouth = outY >= GOAL_Y_MIN && outY <= GOAL_Y_MAX;
   if (isOutHorizontal && inGoalMouth) {
     const scoredTeam = outX < PLAY_MIN_X ? TEAM_BLUE : TEAM_RED;
-    room.score[scoredTeam] += 1;
-    awardBallAfterGoal(room, scoredTeam);
+    startGoalQuiz(room, scoredTeam, { x: outX, y: outY });
     return;
   }
 
@@ -1296,6 +1530,12 @@ function tryResolveDuel(room) {
   const duel = room.match.duel;
   if (!duel || duel.resolved) return;
 
+  if (duel.isGoalQuiz) {
+    if (!duel.answers[duel.holderId]) return;
+    resolveDuelOutcome(room, "goal-quiz-answered");
+    return;
+  }
+
   const participantIds = [duel.holderId, duel.challengerId];
   const allAnswered = participantIds.every((id) => duel.answers[id]);
   if (!allAnswered) return;
@@ -1334,6 +1574,37 @@ function resolveDuelOutcome(room, reason = "finished") {
   const challenger = room.players[duel.challengerId];
   const winner = room.players[winnerId];
   const loser = winnerId === duel.holderId ? challenger : holder;
+
+  if (duel.isGoalQuiz) {
+    const shooterId = duel.holderId;
+    const isCorrect = Boolean(duel.answers[shooterId]?.isCorrect);
+    const scoringTeam = duel.scoringTeam;
+    const defendingTeam = duel.defendingTeam;
+    const sideLabel = duel.exitOnLeft ? "ben trai" : "ben phai";
+
+    room.match.duel = null;
+
+    if (isCorrect) {
+      registerGoal(room, scoringTeam);
+    } else {
+      awardGoalKick(
+        room,
+        defendingTeam,
+        duel.goalSpot,
+        `${defendingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} phat bong len trong vong cam ${sideLabel}!`
+      );
+      room.match.notice = `${scoringTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} tra loi sai - khong ghi ban! ${
+        defendingTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"
+      } phat bong len trong vong cam.`;
+    }
+
+    io.to(room.id).emit("duel-result", {
+      winnerId: isCorrect ? shooterId : null,
+      holderIdAfterDuel: room.ballHolderId,
+      reason
+    });
+    return;
+  }
 
   if (duel.isKickoff) {
     if (winner) {
@@ -1420,6 +1691,11 @@ function finishDuel(room, forcedWinnerId = null, reason = "finished") {
   const duel = room.match.duel;
   if (!duel || duel.resolved) return;
 
+  if (duel.isGoalQuiz) {
+    resolveDuelOutcome(room, reason);
+    return;
+  }
+
   if (forcedWinnerId && room.players[forcedWinnerId]) {
     duel.resolved = true;
     const isKickoff = Boolean(duel.isKickoff);
@@ -1465,6 +1741,10 @@ function finishDuel(room, forcedWinnerId = null, reason = "finished") {
 }
 
 function updateRoom(room) {
+  if (room.match.phase === "FINISHED") {
+    return;
+  }
+
   if (room.match.phase === "PLAYING") {
     if (!room.match.kickoffDone && !room.match.duel) {
       maybeStartKickoff(room);
@@ -1542,6 +1822,8 @@ function updateRoom(room) {
     }
 
     startDuel(room);
+  } else if (room.match.phase === "POST_GOAL") {
+    updatePostGoalPhase(room);
   } else if (room.match.duel) {
     const duel = room.match.duel;
 
@@ -1672,9 +1954,11 @@ function removePlayerFromRoom(socketId) {
   }
 
   if (room.match.phase === "DUEL" && room.match.duel) {
-    const { holderId, challengerId } = room.match.duel;
-    if (socketId === holderId || socketId === challengerId) {
-      const winnerId = socketId === holderId ? challengerId : holderId;
+    const duel = room.match.duel;
+    if (duel.isGoalQuiz && socketId === duel.holderId) {
+      finishDuel(room, null, "shooter-disconnected");
+    } else if (socketId === duel.holderId || socketId === duel.challengerId) {
+      const winnerId = socketId === duel.holderId ? duel.challengerId : duel.holderId;
       if (room.players[winnerId]) {
         finishDuel(room, winnerId, "opponent-disconnected");
       } else {
@@ -1960,9 +2244,16 @@ io.on("connection", (socket) => {
   socket.on("join-fixed-11vs11", handleJoinFixed4vs4);
 
   // Frontend moi yeu cau su dung su kien move.
+  socket.on("reset-match", () => {
+    const room = rooms.get(socketToRoom.get(socket.id));
+    if (!room || room.match.phase !== "FINISHED") return;
+    resetMatch(room);
+    io.to(room.id).emit("gameState", buildRoomGameState(room));
+  });
+
   socket.on("move", (inputState) => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room) return;
+    if (!room || isGameplayBlocked(room)) return;
 
     const player = room.players[socket.id];
     if (!player) return;
@@ -1976,7 +2267,7 @@ io.on("connection", (socket) => {
       message: "Nen dung su kien move cho frontend React moi."
     });
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room) return;
+    if (!room || isGameplayBlocked(room)) return;
     const player = room.players[socket.id];
     if (!player) return;
 
@@ -1986,7 +2277,7 @@ io.on("connection", (socket) => {
   // Su kien sut/chuyen de dua bong chet tro lai bong song.
   socket.on("kick-ball", () => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room) return;
+    if (!room || isGameplayBlocked(room)) return;
 
     // Neu dang bong chet va dung nguoi co quyen da => dua ve PLAYING.
     if (room.match.setPiece) {
@@ -2017,7 +2308,7 @@ io.on("connection", (socket) => {
 
   socket.on("shoot-ball", ({ mouseX, mouseY }) => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room) return;
+    if (!room || isGameplayBlocked(room)) return;
 
     const shooter = room.players[socket.id];
     if (!shooter) return;
@@ -2067,7 +2358,7 @@ io.on("connection", (socket) => {
 
   socket.on("pass-ball", ({ targetPlayerId }) => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room) return;
+    if (!room || isGameplayBlocked(room)) return;
 
     const passer = room.players[socket.id];
     if (!passer) return;
@@ -2099,7 +2390,7 @@ io.on("connection", (socket) => {
 
   socket.on("recharge-energy", () => {
     const room = rooms.get(socketToRoom.get(socket.id));
-    if (!room) return;
+    if (!room || isGameplayBlocked(room)) return;
     const player = room.players[socket.id];
     if (!player) return;
     rechargeEnergy(player);
@@ -2110,7 +2401,9 @@ io.on("connection", (socket) => {
     if (!room || room.match.phase !== "DUEL" || !room.match.duel) return;
 
     const duel = room.match.duel;
-    const isParticipant = socket.id === duel.holderId || socket.id === duel.challengerId;
+    const isParticipant = duel.isGoalQuiz
+      ? socket.id === duel.holderId
+      : socket.id === duel.holderId || socket.id === duel.challengerId;
     if (!isParticipant || !["A", "B", "C", "D"].includes(answer)) return;
     if (duel.answers[socket.id]) return;
 

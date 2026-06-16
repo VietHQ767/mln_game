@@ -36,7 +36,7 @@ export interface DuelPayload {
   duelId: string;
   question: Question;
   players: string[];
-  kind?: "kickoff" | "possession";
+  kind?: "kickoff" | "possession" | "goal";
 }
 
 export interface GKDuelPayload {
@@ -47,14 +47,22 @@ export interface GKDuelPayload {
 }
 
 export interface MatchState {
-  phase: "PLAYING" | "DUEL" | "THROW_IN" | "CORNER_KICK" | "GOAL_KICK";
+  phase: "PLAYING" | "DUEL" | "THROW_IN" | "CORNER_KICK" | "GOAL_KICK" | "POST_GOAL" | "FINISHED";
   notice?: string;
   kickoffDone?: boolean;
+  winnerTeam?: "RED" | "BLUE" | null;
+  winTarget?: number;
+  postGoal?: {
+    receiverId: string | null;
+    receivingTeam: "RED" | "BLUE";
+    resumeAt: number;
+  } | null;
   duel?: {
     holderId: string;
     challengerId: string;
     questionId: string;
     isKickoff?: boolean;
+    isGoalQuiz?: boolean;
   } | null;
   setPiece?: {
     type: "THROW_IN" | "CORNER_KICK" | "GOAL_KICK";
