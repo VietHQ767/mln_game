@@ -1,6 +1,6 @@
-import { DoorClosed, Swords, UserRound } from "lucide-react";
+import { DoorClosed, ShieldOff, Swords, UserRound } from "lucide-react";
 
-type GameMode = "4vs4";
+export type GameMode = "6vs6" | "noRule";
 type TeamChoice = "RED" | "BLUE";
 
 interface MainMenuProps {
@@ -13,13 +13,12 @@ interface MainMenuProps {
   teamRedFull: boolean;
   teamBlueFull: boolean;
   kickoffQuizEnabled: boolean;
-  testModeEnabled: boolean;
+  noRuleModeEnabled: boolean;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectTeam: (team: TeamChoice) => void;
   onToggleKickoffQuiz: (enabled: boolean) => void;
-  onToggleTestMode: (enabled: boolean) => void;
-  // 4vs4: luôn vào cùng 1 phòng duy nhất (không nhập mã phòng).
+  onToggleNoRuleMode: (enabled: boolean) => void;
   onJoinFixedRoom: () => void;
   onSpectateRoom: () => void;
   onExit: () => void;
@@ -35,17 +34,18 @@ export default function MainMenu({
   teamRedFull,
   teamBlueFull,
   kickoffQuizEnabled,
-  testModeEnabled,
+  noRuleModeEnabled,
   onPlayerNameChange,
   onSelectMode,
   onSelectTeam,
   onToggleKickoffQuiz,
-  onToggleTestMode,
+  onToggleNoRuleMode,
   onJoinFixedRoom,
   onSpectateRoom,
   onExit
 }: MainMenuProps) {
-  const showRoomTools = selectedMode === "4vs4";
+  const showRoomTools = selectedMode === "6vs6" || selectedMode === "noRule";
+  const isNoRuleRoom = selectedMode === "noRule";
   const selectedTeamFull = selectedTeam === "RED" ? teamRedFull : teamBlueFull;
   const roomHasPlayers = teamRedCount + teamBlueCount > 0;
 
@@ -76,71 +76,89 @@ export default function MainMenu({
 
         <div className="mt-5 grid gap-3 md:grid-cols-1">
           <button
-            onClick={() => onSelectMode("4vs4")}
+            type="button"
+            onClick={() => onSelectMode("6vs6")}
             className={`rounded-xl border p-4 text-left transition ${
-              selectedMode === "4vs4"
+              selectedMode === "6vs6"
                 ? "border-amber-300 bg-amber-500/20"
                 : "border-slate-700 bg-slate-800/80 hover:border-amber-300/70"
             }`}
           >
             <div className="mb-2 flex items-center gap-2 text-base font-bold text-white">
-              <Swords size={18} /> 4 vs 4
+              <Swords size={18} /> 6 vs 6
             </div>
-            <p className="text-xs text-slate-200">Chế độ đấu đôi tiêu chuẩn cho lớp học (tối đa 4v4).</p>
+            <p className="text-xs text-slate-200">Chế độ đấu đôi tiêu chuẩn cho lớp học (tối đa 6v6).</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSelectMode("noRule")}
+            className={`rounded-xl border p-4 text-left transition ${
+              selectedMode === "noRule"
+                ? "border-violet-300 bg-violet-500/20"
+                : "border-slate-700 bg-slate-800/80 hover:border-violet-300/70"
+            }`}
+          >
+            <div className="mb-2 flex items-center gap-2 text-base font-bold text-white">
+              <ShieldOff size={18} /> No Rule
+            </div>
+            <p className="text-xs text-slate-200">
+              Ghi bàn không cần trả lời câu hỏi — chỉ trả lời khi nạp năng lượng (phím Q).
+            </p>
           </button>
         </div>
 
         {showRoomTools && (
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2.5">
-              <div>
-                <p className="text-sm font-semibold text-slate-100">Câu hỏi khởi đầu</p>
-                <p className="text-xs text-slate-400">
-                  {roomHasPlayers
-                    ? "Phòng đã có người — giữ cài đặt hiện tại"
-                    : testModeEnabled
-                      ? "Tắt khi bật chế độ Test"
+            {!isNoRuleRoom && (
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-100">Câu hỏi khởi đầu</p>
+                  <p className="text-xs text-slate-400">
+                    {roomHasPlayers
+                      ? "Phòng đã có người — giữ cài đặt hiện tại"
                       : "Tranh quyền giữ bóng trước khi trận đấu"}
-                </p>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onToggleKickoffQuiz(!kickoffQuizEnabled)}
+                  disabled={roomHasPlayers}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    kickoffQuizEnabled
+                      ? "bg-emerald-600/90 text-white"
+                      : "bg-slate-700 text-slate-300"
+                  } ${roomHasPlayers ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
+                >
+                  {kickoffQuizEnabled ? "Bật" : "Tắt"}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onToggleKickoffQuiz(!kickoffQuizEnabled)}
-                disabled={roomHasPlayers || testModeEnabled}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  kickoffQuizEnabled
-                    ? "bg-emerald-600/90 text-white"
-                    : "bg-slate-700 text-slate-300"
-                } ${roomHasPlayers || testModeEnabled ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
-              >
-                {kickoffQuizEnabled ? "Bật" : "Tắt"}
-              </button>
-            </div>
+            )}
 
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-slate-800/80 px-3 py-2.5">
-              <div>
-                <p className="text-sm font-semibold text-amber-100">Test</p>
-                <p className="text-xs text-slate-400">
-                  {roomHasPlayers
-                    ? "Phòng đã có người — giữ cài đặt hiện tại"
-                    : kickoffQuizEnabled
-                      ? "Tắt khi bật câu hỏi khởi đầu"
-                      : "Điều khiển bóng ngay, ghi bàn không cần trả lời câu hỏi"}
-                </p>
+            {isNoRuleRoom && (
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-violet-500/40 bg-slate-800/80 px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-semibold text-violet-100">No Rule</p>
+                  <p className="text-xs text-slate-400">
+                    {roomHasPlayers
+                      ? "Phòng đã có người — giữ cài đặt hiện tại"
+                      : "Chờ đủ hai đội, tranh bóng bằng Kéo Búa Bao — không điều khiển bóng trước đó"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onToggleNoRuleMode(!noRuleModeEnabled)}
+                  disabled={roomHasPlayers}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    noRuleModeEnabled
+                      ? "bg-violet-500/90 text-white"
+                      : "bg-slate-700 text-slate-300"
+                  } ${roomHasPlayers ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
+                >
+                  {noRuleModeEnabled ? "Bật" : "Tắt"}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onToggleTestMode(!testModeEnabled)}
-                disabled={roomHasPlayers || kickoffQuizEnabled}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  testModeEnabled
-                    ? "bg-amber-500/90 text-white"
-                    : "bg-slate-700 text-slate-300"
-                } ${roomHasPlayers || kickoffQuizEnabled ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
-              >
-                {testModeEnabled ? "Bật" : "Tắt"}
-              </button>
-            </div>
+            )}
 
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Chọn đội</h3>
             <p className="mb-3 text-xs text-slate-300">

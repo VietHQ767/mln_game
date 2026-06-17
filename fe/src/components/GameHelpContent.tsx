@@ -10,7 +10,7 @@ export default function GameHelpContent() {
         <h3 className="mb-2 text-lg font-semibold text-amber-300">Cách chơi</h3>
         <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate-200">
           <li>
-            Bấm <strong>Start</strong> ở trang chủ, nhập tên cầu thủ và chọn chế độ <strong>4 vs 4</strong>.
+            Bấm <strong>Start</strong> ở trang chủ, nhập tên cầu thủ và chọn chế độ <strong>6 vs 6</strong>.
           </li>
           <li>
             Chọn <strong>Đội Đỏ</strong> hoặc <strong>Đội Xanh</strong>, sau đó bấm <strong>Vào phòng</strong> để
@@ -34,7 +34,7 @@ export default function GameHelpContent() {
         <h3 className="mb-2 text-lg font-semibold text-amber-300">Luật chơi</h3>
         <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate-200">
           <li>
-            Mỗi trận là đấu <strong>4 vs 4</strong>. Đội nào đạt <strong>15 bàn thắng</strong> trước sẽ thắng.
+            Mỗi trận là đấu <strong>6 vs 6</strong>. Đội nào đạt <strong>15 bàn thắng</strong> trước sẽ thắng.
           </li>
           <li>
             Trước khi trận bắt đầu, đội phải trả lời câu hỏi <strong>tranh quyền giữ bóng</strong>.

@@ -42,6 +42,16 @@ export interface DuelPayload {
   kind?: "kickoff" | "possession" | "goal";
 }
 
+export type RpsChoice = "rock" | "paper" | "scissors";
+
+export interface RpsDuelPayload {
+  duelId: string;
+  kind: "kickoff" | "possession";
+  round: number;
+  deadlineAt: number;
+  players: string[];
+}
+
 export interface GKDuelPayload {
   duelId: string;
   question: Question;
@@ -64,6 +74,7 @@ export interface MatchState {
   kickoffWaitUntil?: number | null;
   kickoffQuizEnabled?: boolean;
   testModeEnabled?: boolean;
+  noRuleEnabled?: boolean;
   winnerTeam?: "RED" | "BLUE" | null;
   winTarget?: number;
   postGoal?: {
@@ -77,6 +88,7 @@ export interface MatchState {
     questionId: string;
     isKickoff?: boolean;
     isGoalQuiz?: boolean;
+    isRps?: boolean;
   } | null;
   setPiece?: {
     type: "THROW_IN" | "CORNER_KICK" | "GOAL_KICK";

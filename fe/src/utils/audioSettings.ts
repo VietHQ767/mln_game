@@ -1,6 +1,7 @@
 export const MUSIC_VOLUME_KEY = "musicVolume";
 export const SFX_VOLUME_KEY = "sfxVolume";
 export const MUSIC_ENABLED_KEY = "musicEnabled";
+export const MATCH_MUSIC_ENABLED_KEY = "matchMusicEnabled";
 
 export const DEFAULT_MUSIC_VOLUME = 0.4;
 export const DEFAULT_SFX_VOLUME = 0.15;
@@ -30,6 +31,10 @@ export function loadMusicEnabled() {
   return readBoolean(MUSIC_ENABLED_KEY, true);
 }
 
+export function loadMatchMusicEnabled() {
+  return readBoolean(MATCH_MUSIC_ENABLED_KEY, true);
+}
+
 export function saveMusicVolume(volume: number) {
   localStorage.setItem(MUSIC_VOLUME_KEY, String(volume));
 }
@@ -40,4 +45,8 @@ export function saveSfxVolume(volume: number) {
 
 export function saveMusicEnabled(enabled: boolean) {
   localStorage.setItem(MUSIC_ENABLED_KEY, String(enabled));
+}
+
+export function saveMatchMusicEnabled(enabled: boolean) {
+  localStorage.setItem(MATCH_MUSIC_ENABLED_KEY, String(enabled));
 }

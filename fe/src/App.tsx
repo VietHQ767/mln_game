@@ -5,15 +5,22 @@ import ButtonSoundEffects from "./components/ButtonSoundEffects";
 import GameCanvas from "./components/GameCanvas";
 import SettingsButton from "./components/SettingsButton";
 import KickoffWaitOverlay from "./components/KickoffWaitOverlay";
+import MatchFieldMusic from "./components/MatchFieldMusic";
 import MatchEndOverlay from "./components/MatchEndOverlay";
 import HomePage from "./components/HomePage";
-import MainMenu from "./components/MainMenu";
+import MainMenu, { type GameMode } from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
 import ScoreBoard from "./components/ScoreBoard";
-import type { DuelPayload, GameState } from "./types";
+import RpsDuelModal from "./components/RpsDuelModal";
+import type { DuelPayload, GameState, RpsChoice, RpsDuelPayload } from "./types";
 
-type GameMode = "4vs4";
+function loadNoRuleModeEnabled() {
+  const stored = localStorage.getItem("noRuleModeEnabled");
+  if (stored !== null) return stored === "true";
+  return localStorage.getItem("testModeEnabled") === "true";
+}
+
 type TeamChoice = "RED" | "BLUE";
 
 // URL backend: production lấy từ Vercel env VITE_BACKEND_URL, local mặc định localhost:3000.
@@ -32,8 +39,13 @@ const socket: Socket = io(SOCKET_URL, {
   transports: ["websocket", "polling"]
 });
 
-// 4 vs 4 luôn sử dụng 1 phòng duy nhất.
-const FIXED_4VS4_ROOM_ID = "4vs4-room";
+// 6 vs 6 luôn sử dụng 1 phòng duy nhất.
+const FIXED_6VS6_ROOM_ID = "6vs6-room";
+const FIXED_NO_RULE_ROOM_ID = "no-rule-room";
+
+function roomIdForMode(mode: GameMode | null) {
+  return mode === "noRule" ? FIXED_NO_RULE_ROOM_ID : FIXED_6VS6_ROOM_ID;
+}
 
 const initialGameState: GameState = {
   myId: null,
@@ -49,29 +61,31 @@ export default function App() {
   const [showHomePage, setShowHomePage] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
-  const [selectedMode, setSelectedMode] = useState<GameMode | null>("4vs4");
-  const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
-  const [testModeEnabled, setTestModeEnabled] = useState(
-    () => localStorage.getItem("testModeEnabled") === "true"
+  const [selectedMode, setSelectedMode] = useState<GameMode | null>(
+    () => (localStorage.getItem("selectedMode") as GameMode | null) || "6vs6"
   );
-  const [kickoffQuizEnabled, setKickoffQuizEnabled] = useState(() => {
-    if (localStorage.getItem("testModeEnabled") === "true") return false;
-    return localStorage.getItem("kickoffQuizEnabled") !== "false";
-  });
+  const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
+  const [noRuleModeEnabled, setNoRuleModeEnabled] = useState(loadNoRuleModeEnabled);
+  const [kickoffQuizEnabled, setKickoffQuizEnabled] = useState(
+    () => localStorage.getItem("kickoffQuizEnabled") !== "false"
+  );
   const pendingNoticeRef = useRef<string | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
   const testModeActiveRef = useRef(false);
+  const noRuleActiveRef = useRef(false);
   const [teamAvailability, setTeamAvailability] = useState({
     exists: false,
     redCount: 0,
     blueCount: 0,
-    maxTeamSize: 4,
+    maxTeamSize: 6,
     redFull: false,
     blueFull: false
   });
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [duelData, setDuelData] = useState<DuelPayload | null>(null);
+  const [rpsDuelData, setRpsDuelData] = useState<RpsDuelPayload | null>(null);
   const [hasAnswered, setHasAnswered] = useState(false);
+  const [hasRpsSubmitted, setHasRpsSubmitted] = useState(false);
   const [showEnergyCharger, setShowEnergyCharger] = useState(false);
   const [inputState, setInputState] = useState({
     up: false,
@@ -134,20 +148,12 @@ export default function App() {
       // Chi dong bo cai dat phong khi da co nguoi — phong trong thi giu lua chon local.
       if (roomHasPlayers) {
         if (typeof payload.testModeEnabled === "boolean") {
-          setTestModeEnabled(payload.testModeEnabled);
-          localStorage.setItem("testModeEnabled", String(payload.testModeEnabled));
-          if (payload.testModeEnabled) {
-            setKickoffQuizEnabled(false);
-            localStorage.setItem("kickoffQuizEnabled", "false");
-          }
+          setNoRuleModeEnabled(payload.testModeEnabled);
+          localStorage.setItem("noRuleModeEnabled", String(payload.testModeEnabled));
         }
-        if (typeof payload.kickoffQuizEnabled === "boolean") {
+        if (typeof payload.kickoffQuizEnabled === "boolean" && selectedMode === "6vs6") {
           setKickoffQuizEnabled(payload.kickoffQuizEnabled);
           localStorage.setItem("kickoffQuizEnabled", String(payload.kickoffQuizEnabled));
-          if (payload.kickoffQuizEnabled) {
-            setTestModeEnabled(false);
-            localStorage.setItem("testModeEnabled", "false");
-          }
         }
       }
 
@@ -155,7 +161,7 @@ export default function App() {
         exists: true,
         redCount: payload.redCount ?? 0,
         blueCount: payload.blueCount ?? 0,
-        maxTeamSize: payload.maxTeamSize ?? 4,
+        maxTeamSize: payload.maxTeamSize ?? 6,
         redFull: Boolean(payload.redFull),
         blueFull: Boolean(payload.blueFull)
       });
@@ -168,6 +174,7 @@ export default function App() {
       }
       setGameState({ ...payload, myId: payload.myId });
       testModeActiveRef.current = Boolean(payload.match?.testModeEnabled);
+      noRuleActiveRef.current = Boolean(payload.match?.noRuleEnabled);
       // Chỉ ẩn menu khi server xác nhận vào phòng thành công.
       setShowMenu(false);
       const notice = pendingNoticeRef.current;
@@ -180,6 +187,7 @@ export default function App() {
       setGameState((prev) => {
         const next = { ...prev, ...payload };
         testModeActiveRef.current = Boolean(next.match?.testModeEnabled);
+        noRuleActiveRef.current = Boolean(next.match?.noRuleEnabled);
         return next;
       });
     });
@@ -188,13 +196,29 @@ export default function App() {
       setShowMenu(true);
     });
     socket.on("start-duel", (payload: DuelPayload) => {
-      if (payload.kind === "goal" && testModeActiveRef.current) return;
+      if (
+        payload.kind === "goal" &&
+        (testModeActiveRef.current || noRuleActiveRef.current)
+      ) {
+        return;
+      }
       setDuelData(payload);
       setHasAnswered(false);
     });
+    socket.on("start-rps-duel", (payload: RpsDuelPayload) => {
+      setRpsDuelData(payload);
+      setHasRpsSubmitted(false);
+      setDuelData(null);
+    });
+    socket.on("rps-result", () => {
+      setRpsDuelData(null);
+      setHasRpsSubmitted(false);
+    });
     socket.on("duel-result", () => {
       setDuelData(null);
+      setRpsDuelData(null);
       setHasAnswered(false);
+      setHasRpsSubmitted(false);
     });
     socket.on("action-denied", (payload: { message?: string }) => {
       if (payload?.message) alert(payload.message);
@@ -211,18 +235,20 @@ export default function App() {
       socket.off("gameState");
       socket.off("room-error");
       socket.off("start-duel");
+      socket.off("start-rps-duel");
+      socket.off("rps-result");
       socket.off("duel-result");
       socket.off("action-denied");
       socket.off("room-full");
     };
   }, []);
 
-  // Cập nhật thông tin số người trong 2 đội khi đang ở menu mode 4 vs 4.
+  // Cập nhật số người trong phòng đang chọn (6 vs 6 hoặc No Rule).
   useEffect(() => {
-    if (!showMenu || selectedMode !== "4vs4") return;
+    if (!showMenu || (selectedMode !== "6vs6" && selectedMode !== "noRule")) return;
 
     const request = () => {
-      socket.emit("request-room-info", { roomId: FIXED_4VS4_ROOM_ID });
+      socket.emit("request-room-info", { roomId: roomIdForMode(selectedMode) });
     };
 
     request();
@@ -241,7 +267,9 @@ export default function App() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (showMenu || gameState.match.phase === "PRE_KICKOFF_WAIT") return;
+      if (gameState.match.phase === "DUEL") return;
       if (!gameState.myId) return;
+      if (!gameState.match.kickoffDone && gameState.match.phase === "PLAYING") return;
 
       if (event.code === "Space") {
         event.preventDefault();
@@ -295,8 +323,8 @@ export default function App() {
 
   const handleSelectMode = (mode: GameMode) => {
     setSelectedMode(mode);
-
-    if (mode === "4vs4") {
+    localStorage.setItem("selectedMode", mode);
+    if (mode === "6vs6" || mode === "noRule") {
       setSelectedTeam("RED");
     }
   };
@@ -304,24 +332,16 @@ export default function App() {
   const handleToggleKickoffQuiz = (enabled: boolean) => {
     setKickoffQuizEnabled(enabled);
     localStorage.setItem("kickoffQuizEnabled", String(enabled));
-    if (enabled) {
-      setTestModeEnabled(false);
-      localStorage.setItem("testModeEnabled", "false");
-    }
   };
 
-  const handleToggleTestMode = (enabled: boolean) => {
-    setTestModeEnabled(enabled);
-    localStorage.setItem("testModeEnabled", String(enabled));
-    if (enabled) {
-      setKickoffQuizEnabled(false);
-      localStorage.setItem("kickoffQuizEnabled", "false");
-    }
+  const handleToggleNoRuleMode = (enabled: boolean) => {
+    setNoRuleModeEnabled(enabled);
+    localStorage.setItem("noRuleModeEnabled", String(enabled));
   };
 
   const handleJoinFixedRoom = () => {
-    if (selectedMode !== "4vs4") {
-      alert("Hãy chọn chế độ 4 vs 4 trước khi vào phòng.");
+    if (selectedMode !== "6vs6" && selectedMode !== "noRule") {
+      alert("Hãy chọn phòng 6 vs 6 hoặc No Rule trước khi vào.");
       return;
     }
     if (!socket.connected) {
@@ -332,9 +352,12 @@ export default function App() {
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
-    pendingNoticeRef.current = testModeEnabled
-      ? "Vào phòng test — điều khiển bóng ngay!"
-      : "Vào phòng thành công!";
+    const joinNoRuleFeature = selectedMode === "noRule" && noRuleModeEnabled;
+    pendingNoticeRef.current = joinNoRuleFeature
+      ? "Vào phòng No Rule — Kéo Búa Bao để tranh chấp bóng!"
+      : selectedMode === "noRule"
+        ? "Vào phòng No Rule — ghi bàn không cần trả lời câu hỏi!"
+        : "Vào phòng thành công!";
     if (joinTimeoutRef.current) {
       window.clearTimeout(joinTimeoutRef.current);
     }
@@ -346,17 +369,22 @@ export default function App() {
       setShowMenu(true);
     }, 8000);
     socket.emit("join-room", {
-      roomId: FIXED_4VS4_ROOM_ID,
+      roomId: roomIdForMode(selectedMode),
       playerName: finalName,
       preferredTeam: selectedTeam,
-      kickoffQuizEnabled: testModeEnabled ? false : kickoffQuizEnabled,
-      testModeEnabled
+      kickoffQuizEnabled: selectedMode === "6vs6" ? kickoffQuizEnabled : false,
+      testModeEnabled: joinNoRuleFeature
     });
   };
 
+  function submitRpsChoice(choice: RpsChoice) {
+    setHasRpsSubmitted(true);
+    socket.emit("submit-rps-choice", { choice });
+  }
+
   const handleSpectateRoom = () => {
-    if (selectedMode !== "4vs4") {
-      alert("Hãy chọn chế độ 4 vs 4 trước khi xem trận.");
+    if (selectedMode !== "6vs6" && selectedMode !== "noRule") {
+      alert("Hãy chọn phòng 6 vs 6 hoặc No Rule trước khi xem trận.");
       return;
     }
     if (!socket.connected) {
@@ -372,7 +400,7 @@ export default function App() {
       alert("Không nhận phản hồi từ server khi vào chế độ xem.");
       setShowMenu(true);
     }, 8000);
-    socket.emit("spectate-room", { roomId: FIXED_4VS4_ROOM_ID });
+    socket.emit("spectate-room", { roomId: roomIdForMode(selectedMode) });
   };
 
   const handlePlayAgain = () => {
@@ -417,6 +445,7 @@ export default function App() {
 
     if (!isCornerKick) {
       if (gameState.match.phase !== "PLAYING") return;
+      if (!gameState.match.kickoffDone) return;
       if (gameState.ballHolderId !== gameState.myId) return;
     }
     socket.emit("shoot-ball", { mouseX, mouseY });
@@ -433,6 +462,7 @@ export default function App() {
 
     if (!isThrowInTaker) {
       if (gameState.match.phase !== "PLAYING") return;
+      if (!gameState.match.kickoffDone) return;
       if (gameState.ballHolderId !== gameState.myId) return;
     }
 
@@ -461,9 +491,9 @@ export default function App() {
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
           kickoffQuizEnabled={kickoffQuizEnabled}
-          testModeEnabled={testModeEnabled}
+          noRuleModeEnabled={noRuleModeEnabled}
           onToggleKickoffQuiz={handleToggleKickoffQuiz}
-          onToggleTestMode={handleToggleTestMode}
+          onToggleNoRuleMode={handleToggleNoRuleMode}
           onJoinFixedRoom={handleJoinFixedRoom}
           onSpectateRoom={handleSpectateRoom}
           onExit={handleExit}
@@ -490,6 +520,7 @@ export default function App() {
               resumeAt={gameState.match.kickoffWaitUntil}
               kickoffQuizEnabled={gameState.match.kickoffQuizEnabled ?? kickoffQuizEnabled}
             />
+            <MatchFieldMusic active={gameState.match.phase !== "FINISHED"} />
             <div
               className={`pointer-events-none fixed left-1/2 z-20 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur ${
                 showEnergyCharger ? "top-44" : "top-4"
@@ -498,13 +529,21 @@ export default function App() {
               {gameState.match.notice ||
                 (gameState.match.phase === "PRE_KICKOFF_WAIT"
                   ? "Chuẩn bị vào sân - vui lòng đợi..."
-                  : gameState.match.testModeEnabled && gameState.match.phase === "PLAYING"
-                  ? "Chế độ test — ghi bàn không cần trả lời câu hỏi"
+                  : gameState.match.noRuleEnabled &&
+                      gameState.match.testModeEnabled &&
+                      gameState.match.phase === "PLAYING"
+                  ? "No Rule — Kéo Búa Bao tranh chấp bóng, ghi bàn không cần câu hỏi"
+                  : gameState.match.noRuleEnabled && gameState.match.phase === "PLAYING"
+                  ? "No Rule — ghi bàn không cần trả lời câu hỏi (Q để nạp năng lượng)"
                   : !gameState.match.kickoffDone && gameState.match.phase === "PLAYING"
-                  ? "Chờ đợi cả hai đội để bắt đầu trận đấu..."
+                  ? gameState.match.noRuleEnabled && gameState.match.testModeEnabled
+                    ? "Chờ cả hai đội — sau đó Kéo Búa Bao tranh bóng"
+                    : "Chờ đợi cả hai đội để bắt đầu trận đấu..."
                   : gameState.match.phase === "PLAYING"
                   ? "Bóng đang sống"
-                  : gameState.match.phase === "DUEL" && gameState.match.duel?.isGoalQuiz
+                  : gameState.match.phase === "DUEL" && gameState.match.duel?.isRps
+                    ? "Kéo Búa Bao — chọn thẻ trong 5 giây!"
+                    : gameState.match.phase === "DUEL" && gameState.match.duel?.isGoalQuiz
                     ? "Xác nhận ghi bàn - trả lời câu hỏi!"
                     : gameState.match.phase === "DUEL" && gameState.match.duel?.isKickoff
                     ? "Tranh quyền giữ bóng - trả lời câu hỏi!"
@@ -541,9 +580,16 @@ export default function App() {
               onPlayAgain={handlePlayAgain}
               onBackToMenu={handleBackToMenu}
             />
+            <RpsDuelModal
+              duelData={rpsDuelData}
+              myId={gameState.myId}
+              submitted={hasRpsSubmitted}
+              onSubmitChoice={submitRpsChoice}
+            />
             <QuizModal
               duelData={
-                gameState.match.testModeEnabled && duelData?.kind === "goal"
+                (gameState.match.testModeEnabled || gameState.match.noRuleEnabled) &&
+                duelData?.kind === "goal"
                   ? null
                   : duelData
               }
