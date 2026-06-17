@@ -11,18 +11,47 @@ const ALLOWED_ORIGINS = [
     : [])
 ];
 
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== "http:" && protocol !== "https:") return false;
+    if (hostname === "localhost" || hostname === "127.0.0.1") return true;
+    if (hostname.endsWith(".vercel.app")) return true;
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin khong duoc phep: ${origin}`));
+  }
+};
+
 const app = express();
-app.use(
-  cors({
-    origin: ALLOWED_ORIGINS
-  })
-);
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin khong duoc phep: ${origin}`));
+    },
     methods: ["GET", "POST"]
   }
 });
@@ -2432,6 +2461,7 @@ app.get("/", (_, res) => {
   res.json({
     message: "Backend multiplayer room-based dang chay",
     originAllowed: ALLOWED_ORIGINS,
+    vercelWildcard: "*.vercel.app",
     rooms: getRoomListPayload()
   });
 });
