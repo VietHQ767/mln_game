@@ -6,6 +6,7 @@ import GameCanvas from "./components/GameCanvas";
 import SettingsButton from "./components/SettingsButton";
 import KickoffWaitOverlay from "./components/KickoffWaitOverlay";
 import MatchFieldMusic from "./components/MatchFieldMusic";
+import MatchEndMusic from "./components/MatchEndMusic";
 import MatchEndOverlay from "./components/MatchEndOverlay";
 import HomePage from "./components/HomePage";
 import MainMenu, { type GameMode } from "./components/MainMenu";
@@ -14,12 +15,6 @@ import EnergyCharger from "./components/EnergyCharger";
 import ScoreBoard from "./components/ScoreBoard";
 import RpsDuelModal from "./components/RpsDuelModal";
 import type { DuelPayload, GameState, RpsChoice, RpsDuelPayload } from "./types";
-
-function loadNoRuleModeEnabled() {
-  const stored = localStorage.getItem("noRuleModeEnabled");
-  if (stored !== null) return stored === "true";
-  return localStorage.getItem("testModeEnabled") === "true";
-}
 
 type TeamChoice = "RED" | "BLUE";
 
@@ -65,10 +60,6 @@ export default function App() {
     () => (localStorage.getItem("selectedMode") as GameMode | null) || "6vs6"
   );
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
-  const [noRuleModeEnabled, setNoRuleModeEnabled] = useState(loadNoRuleModeEnabled);
-  const [kickoffQuizEnabled, setKickoffQuizEnabled] = useState(
-    () => localStorage.getItem("kickoffQuizEnabled") !== "false"
-  );
   const pendingNoticeRef = useRef<string | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
   const testModeActiveRef = useRef(false);
@@ -143,19 +134,6 @@ export default function App() {
       }
 
       const roomPlayerCount = (payload.redCount ?? 0) + (payload.blueCount ?? 0);
-      const roomHasPlayers = roomPlayerCount > 0;
-
-      // Chi dong bo cai dat phong khi da co nguoi — phong trong thi giu lua chon local.
-      if (roomHasPlayers) {
-        if (typeof payload.testModeEnabled === "boolean") {
-          setNoRuleModeEnabled(payload.testModeEnabled);
-          localStorage.setItem("noRuleModeEnabled", String(payload.testModeEnabled));
-        }
-        if (typeof payload.kickoffQuizEnabled === "boolean" && selectedMode === "6vs6") {
-          setKickoffQuizEnabled(payload.kickoffQuizEnabled);
-          localStorage.setItem("kickoffQuizEnabled", String(payload.kickoffQuizEnabled));
-        }
-      }
 
       setTeamAvailability({
         exists: true,
@@ -329,16 +307,6 @@ export default function App() {
     }
   };
 
-  const handleToggleKickoffQuiz = (enabled: boolean) => {
-    setKickoffQuizEnabled(enabled);
-    localStorage.setItem("kickoffQuizEnabled", String(enabled));
-  };
-
-  const handleToggleNoRuleMode = (enabled: boolean) => {
-    setNoRuleModeEnabled(enabled);
-    localStorage.setItem("noRuleModeEnabled", String(enabled));
-  };
-
   const handleJoinFixedRoom = () => {
     if (selectedMode !== "6vs6" && selectedMode !== "noRule") {
       alert("Hãy chọn phòng 6 vs 6 hoặc No Rule trước khi vào.");
@@ -352,11 +320,9 @@ export default function App() {
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
-    const joinNoRuleFeature = selectedMode === "noRule" && noRuleModeEnabled;
-    pendingNoticeRef.current = joinNoRuleFeature
-      ? "Vào phòng No Rule — Kéo Búa Bao để tranh chấp bóng!"
-      : selectedMode === "noRule"
-        ? "Vào phòng No Rule — ghi bàn không cần trả lời câu hỏi!"
+    pendingNoticeRef.current =
+      selectedMode === "noRule"
+        ? "Vào phòng No Rule — Kéo Búa Bao để tranh chấp bóng!"
         : "Vào phòng thành công!";
     if (joinTimeoutRef.current) {
       window.clearTimeout(joinTimeoutRef.current);
@@ -372,8 +338,8 @@ export default function App() {
       roomId: roomIdForMode(selectedMode),
       playerName: finalName,
       preferredTeam: selectedTeam,
-      kickoffQuizEnabled: selectedMode === "6vs6" ? kickoffQuizEnabled : false,
-      testModeEnabled: joinNoRuleFeature
+      kickoffQuizEnabled: selectedMode === "6vs6",
+      testModeEnabled: selectedMode === "noRule"
     });
   };
 
@@ -490,10 +456,6 @@ export default function App() {
           onPlayerNameChange={setPlayerName}
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
-          kickoffQuizEnabled={kickoffQuizEnabled}
-          noRuleModeEnabled={noRuleModeEnabled}
-          onToggleKickoffQuiz={handleToggleKickoffQuiz}
-          onToggleNoRuleMode={handleToggleNoRuleMode}
           onJoinFixedRoom={handleJoinFixedRoom}
           onSpectateRoom={handleSpectateRoom}
           onExit={handleExit}
@@ -518,9 +480,10 @@ export default function App() {
                 !gameState.match.testModeEnabled
               }
               resumeAt={gameState.match.kickoffWaitUntil}
-              kickoffQuizEnabled={gameState.match.kickoffQuizEnabled ?? kickoffQuizEnabled}
+              kickoffQuizEnabled={true}
             />
             <MatchFieldMusic active={gameState.match.phase !== "FINISHED"} />
+            <MatchEndMusic active={gameState.match.phase === "FINISHED"} />
             <div
               className={`pointer-events-none fixed left-1/2 z-20 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur ${
                 showEnergyCharger ? "top-44" : "top-4"

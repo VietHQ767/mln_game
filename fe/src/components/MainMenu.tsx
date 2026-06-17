@@ -12,13 +12,9 @@ interface MainMenuProps {
   teamMaxSize: number;
   teamRedFull: boolean;
   teamBlueFull: boolean;
-  kickoffQuizEnabled: boolean;
-  noRuleModeEnabled: boolean;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectTeam: (team: TeamChoice) => void;
-  onToggleKickoffQuiz: (enabled: boolean) => void;
-  onToggleNoRuleMode: (enabled: boolean) => void;
   onJoinFixedRoom: () => void;
   onSpectateRoom: () => void;
   onExit: () => void;
@@ -33,13 +29,9 @@ export default function MainMenu({
   teamMaxSize,
   teamRedFull,
   teamBlueFull,
-  kickoffQuizEnabled,
-  noRuleModeEnabled,
   onPlayerNameChange,
   onSelectMode,
   onSelectTeam,
-  onToggleKickoffQuiz,
-  onToggleNoRuleMode,
   onJoinFixedRoom,
   onSpectateRoom,
   onExit
@@ -47,7 +39,6 @@ export default function MainMenu({
   const showRoomTools = selectedMode === "6vs6" || selectedMode === "noRule";
   const isNoRuleRoom = selectedMode === "noRule";
   const selectedTeamFull = selectedTeam === "RED" ? teamRedFull : teamBlueFull;
-  const roomHasPlayers = teamRedCount + teamBlueCount > 0;
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center overflow-hidden">
@@ -111,52 +102,18 @@ export default function MainMenu({
         {showRoomTools && (
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
             {!isNoRuleRoom && (
-              <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-semibold text-slate-100">Câu hỏi khởi đầu</p>
-                  <p className="text-xs text-slate-400">
-                    {roomHasPlayers
-                      ? "Phòng đã có người — giữ cài đặt hiện tại"
-                      : "Tranh quyền giữ bóng trước khi trận đấu"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onToggleKickoffQuiz(!kickoffQuizEnabled)}
-                  disabled={roomHasPlayers}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    kickoffQuizEnabled
-                      ? "bg-emerald-600/90 text-white"
-                      : "bg-slate-700 text-slate-300"
-                  } ${roomHasPlayers ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
-                >
-                  {kickoffQuizEnabled ? "Bật" : "Tắt"}
-                </button>
+              <div className="mb-4 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2.5">
+                <p className="text-sm font-semibold text-slate-100">Câu hỏi khởi đầu</p>
+                <p className="text-xs text-slate-400">Tranh quyền giữ bóng trước khi trận đấu</p>
               </div>
             )}
 
             {isNoRuleRoom && (
-              <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-violet-500/40 bg-slate-800/80 px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-semibold text-violet-100">No Rule</p>
-                  <p className="text-xs text-slate-400">
-                    {roomHasPlayers
-                      ? "Phòng đã có người — giữ cài đặt hiện tại"
-                      : "Chờ đủ hai đội, tranh bóng bằng Kéo Búa Bao — không điều khiển bóng trước đó"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onToggleNoRuleMode(!noRuleModeEnabled)}
-                  disabled={roomHasPlayers}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    noRuleModeEnabled
-                      ? "bg-violet-500/90 text-white"
-                      : "bg-slate-700 text-slate-300"
-                  } ${roomHasPlayers ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
-                >
-                  {noRuleModeEnabled ? "Bật" : "Tắt"}
-                </button>
+              <div className="mb-4 rounded-lg border border-violet-500/40 bg-slate-800/80 px-3 py-2.5">
+                <p className="text-sm font-semibold text-violet-100">No Rule</p>
+                <p className="text-xs text-slate-400">
+                  Chờ đủ hai đội, tranh bóng bằng Kéo Búa Bao — không điều khiển bóng trước đó
+                </p>
               </div>
             )}
 

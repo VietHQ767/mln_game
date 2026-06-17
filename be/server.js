@@ -2467,6 +2467,7 @@ function ensureFixed6vs6Room() {
 function resetFixedNoRuleRoomState(room) {
   resetFixed6vs6RoomState(room);
   room.gameMode = "noRule";
+  applyTestModeFlags(room, true);
 }
 
 function normalizeFixedNoRuleRoom(room) {
@@ -2574,18 +2575,22 @@ function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
     }
   }
 
-  if (pendingKickoffQuiz !== null) {
-    room.kickoffQuizEnabled = pendingKickoffQuiz;
-  } else if (room.kickoffQuizEnabled == null) {
-    room.kickoffQuizEnabled = true;
-  }
   if (isNoRuleRoom(room)) {
     room.kickoffQuizEnabled = false;
-  }
-  if (pendingTestMode !== null) {
-    applyTestModeFlags(room, pendingTestMode);
-  } else if (room.testModeEnabled == null) {
-    applyTestModeFlags(room, false);
+    applyTestModeFlags(room, true);
+  } else if (room.gameMode === "6vs6") {
+    room.kickoffQuizEnabled = true;
+  } else {
+    if (pendingKickoffQuiz !== null) {
+      room.kickoffQuizEnabled = pendingKickoffQuiz;
+    } else if (room.kickoffQuizEnabled == null) {
+      room.kickoffQuizEnabled = true;
+    }
+    if (pendingTestMode !== null) {
+      applyTestModeFlags(room, pendingTestMode);
+    } else if (room.testModeEnabled == null) {
+      applyTestModeFlags(room, false);
+    }
   }
 
   const player = createPlayer(socket.id, room, team, playerName);
