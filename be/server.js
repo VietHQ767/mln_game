@@ -150,6 +150,8 @@ const rooms = new Map();
 
 // socketId -> roomId de truy xuat nhanh khi nhan su kien.
 const socketToRoom = new Map();
+// socketId -> roomId khi vao phong xem (khong tham gia choi).
+const socketToSpectatorRoom = new Map();
 
 // socketId -> thong tin profile gui tu frontend truoc khi vao phong.
 const socketProfiles = new Map();
@@ -1483,7 +1485,10 @@ function startLiveBall(room, bySocketId, socket) {
     emitActionDenied(socket, "Nem bien chi duoc chuyen cho dong doi.");
     return;
   }
-  if ((setPieceType === "THROW_IN" || setPieceType === "CORNER_KICK") && !consumeEnergy(taker, SET_PIECE_ENERGY_COST)) {
+  if (
+    (setPieceType === "THROW_IN" || setPieceType === "CORNER_KICK" || setPieceType === "GOAL_KICK") &&
+    !consumeEnergy(taker, SET_PIECE_ENERGY_COST)
+  ) {
     emitActionDenied(socket, "Khong du energy de thuc hien tinh huong bong chet.");
     return;
   }
@@ -2188,6 +2193,17 @@ function removePlayerFromRoom(socketId) {
   emitRoomListToAll();
 }
 
+function removeSpectatorFromRoom(socketId, socket = null) {
+  const roomId = socketToSpectatorRoom.get(socketId);
+  if (!roomId) return;
+  socketToSpectatorRoom.delete(socketId);
+  if (socket) {
+    socket.leave(roomId);
+  } else if (io?.sockets?.sockets?.get(socketId)) {
+    io.sockets.sockets.get(socketId).leave(roomId);
+  }
+}
+
 function resetFixed4vs4RoomState(room) {
   room.players = {};
   room.playerCounter = 0;
@@ -2312,6 +2328,7 @@ function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
   }
 
   removePlayerFromRoom(socket.id);
+  removeSpectatorFromRoom(socket.id, socket);
 
   room = rooms.get(roomId);
   if (!room) {
@@ -2385,6 +2402,31 @@ function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
   }
 
   emitRoomListToAll();
+  io.to(room.id).emit("gameState", buildRoomGameState(room));
+}
+
+function spectateRoom(socket, roomId) {
+  const normalizedId = String(roomId || "").trim();
+  if (!normalizedId) {
+    socket.emit("room-error", { message: "Phong khong ton tai." });
+    return;
+  }
+
+  const room = normalizedId === FIXED_4VS4_ROOM_ID ? ensureFixed4vs4Room() : rooms.get(normalizedId);
+  if (!room) {
+    socket.emit("room-error", { message: "Phong khong ton tai." });
+    return;
+  }
+
+  removePlayerFromRoom(socket.id);
+  removeSpectatorFromRoom(socket.id, socket);
+
+  socketToSpectatorRoom.set(socket.id, room.id);
+  socket.join(room.id);
+  socket.emit("init", {
+    myId: null,
+    ...buildRoomGameState(room)
+  });
   io.to(room.id).emit("gameState", buildRoomGameState(room));
 }
 
@@ -2490,6 +2532,10 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("spectate-room", ({ roomId }) => {
+    spectateRoom(socket, roomId);
+  });
+
   // 4vs4: vao phong tu dong (khong can nhap ma phong).
   // Server se chon 1 phong con slot, uu tien phong ma doi nguoi choi dang chon con du slot.
   socket.on("join-any-room", ({ gameMode, playerName, preferredTeam }) => {
@@ -2575,6 +2621,10 @@ io.on("connection", (socket) => {
     if (room.match.phase === "PLAYING" && room.ballHolderId === socket.id) {
       const player = room.players[socket.id];
       if (!player) return;
+      if (!consumeEnergy(player, SHOOT_ENERGY_COST)) {
+        emitActionDenied(socket, "Khong du energy de da bong bang phim Space.");
+        return;
+      }
 
       const dirX = player.direction.dx || (player.team === TEAM_RED ? 1 : -1);
       const dirY = player.direction.dy || 0;
@@ -2713,10 +2763,12 @@ io.on("connection", (socket) => {
 
   socket.on("leave-room", () => {
     removePlayerFromRoom(socket.id);
+    removeSpectatorFromRoom(socket.id, socket);
   });
 
   socket.on("disconnect", () => {
     removePlayerFromRoom(socket.id);
+    removeSpectatorFromRoom(socket.id, socket);
     socketProfiles.delete(socket.id);
   });
 });

@@ -21,6 +21,7 @@ interface MainMenuProps {
   onToggleTestMode: (enabled: boolean) => void;
   // 4vs4: luôn vào cùng 1 phòng duy nhất (không nhập mã phòng).
   onJoinFixedRoom: () => void;
+  onSpectateRoom: () => void;
   onExit: () => void;
 }
 
@@ -41,6 +42,7 @@ export default function MainMenu({
   onToggleKickoffQuiz,
   onToggleTestMode,
   onJoinFixedRoom,
+  onSpectateRoom,
   onExit
 }: MainMenuProps) {
   const showRoomTools = selectedMode === "4vs4";
@@ -186,6 +188,13 @@ export default function MainMenu({
                 }`}
               >
                 {selectedTeamFull ? "Đội đã đầy" : "Vào phòng"}
+              </button>
+              <button
+                type="button"
+                onClick={onSpectateRoom}
+                className="rounded-lg border border-sky-400/50 bg-sky-500/15 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/25"
+              >
+                Xem trận đấu
               </button>
             </div>
           </div>

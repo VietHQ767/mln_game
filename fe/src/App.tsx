@@ -161,7 +161,7 @@ export default function App() {
       });
     });
 
-    socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
+    socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string | null }) => {
       if (joinTimeoutRef.current) {
         window.clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
@@ -241,6 +241,7 @@ export default function App() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (showMenu || gameState.match.phase === "PRE_KICKOFF_WAIT") return;
+      if (!gameState.myId) return;
 
       if (event.code === "Space") {
         event.preventDefault();
@@ -272,6 +273,7 @@ export default function App() {
 
     const onKeyUp = (event: KeyboardEvent) => {
       if (showMenu || gameState.match.phase === "PRE_KICKOFF_WAIT") return;
+      if (!gameState.myId) return;
       if (event.code === "Space") return;
       const dir = keyMap[event.key as keyof typeof keyMap];
       if (!dir) return;
@@ -350,6 +352,27 @@ export default function App() {
       kickoffQuizEnabled: testModeEnabled ? false : kickoffQuizEnabled,
       testModeEnabled
     });
+  };
+
+  const handleSpectateRoom = () => {
+    if (selectedMode !== "4vs4") {
+      alert("Hãy chọn chế độ 4 vs 4 trước khi xem trận.");
+      return;
+    }
+    if (!socket.connected) {
+      alert(`Chưa kết nối server (${SOCKET_URL}). Kiểm tra backend đang chạy.`);
+      return;
+    }
+    pendingNoticeRef.current = "Đang vào chế độ xem trận đấu...";
+    if (joinTimeoutRef.current) {
+      window.clearTimeout(joinTimeoutRef.current);
+    }
+    joinTimeoutRef.current = window.setTimeout(() => {
+      joinTimeoutRef.current = null;
+      alert("Không nhận phản hồi từ server khi vào chế độ xem.");
+      setShowMenu(true);
+    }, 8000);
+    socket.emit("spectate-room", { roomId: FIXED_4VS4_ROOM_ID });
   };
 
   const handlePlayAgain = () => {
@@ -442,6 +465,7 @@ export default function App() {
           onToggleKickoffQuiz={handleToggleKickoffQuiz}
           onToggleTestMode={handleToggleTestMode}
           onJoinFixedRoom={handleJoinFixedRoom}
+          onSpectateRoom={handleSpectateRoom}
           onExit={handleExit}
         />
         </div>
