@@ -344,7 +344,8 @@ function createEmptyRoom(roomId, roomName) {
       kickoffDone: false,
       winnerTeam: null,
       postGoal: null
-    }
+    },
+    kickoffQuizEnabled: true
   };
 }
 
@@ -850,12 +851,41 @@ function getKickoffRepresentative(room, team) {
   return getSetPieceTaker(room, team, center);
 }
 
+function skipKickoffWithoutQuiz(room) {
+  const redRep = getKickoffRepresentative(room, TEAM_RED);
+  const winner = redRep || getKickoffRepresentative(room, TEAM_BLUE);
+  if (!winner) return;
+
+  const offsetX = winner.team === TEAM_RED ? -35 : 35;
+  winner.x = clamp(FIELD_WIDTH / 2 + offsetX, PLAY_MIN_X + winner.radius, PLAY_MAX_X - winner.radius);
+  winner.y = clamp(FIELD_HEIGHT / 2, PLAY_MIN_Y + winner.radius, PLAY_MAX_Y - winner.radius);
+  winner.direction = { dx: winner.team === TEAM_RED ? 1 : -1, dy: 0 };
+
+  room.ball.x = FIELD_WIDTH / 2;
+  room.ball.y = FIELD_HEIGHT / 2;
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+  room.ballHolderId = winner.id;
+  updateBallToHolder(room);
+  room.lastTouchTeam = winner.team;
+  room.lastTouchPlayerId = winner.id;
+  room.match.kickoffDone = true;
+  room.match.phase = "PLAYING";
+  room.match.duel = null;
+  room.match.notice = "Tran dau bat dau!";
+}
+
 function maybeStartKickoff(room) {
   if (room.gameMode !== "4vs4") return;
   if (room.match.kickoffDone || room.match.duel) return;
 
   if (!hasHumanOnTeam(room, TEAM_RED) || !hasHumanOnTeam(room, TEAM_BLUE)) {
     room.match.notice = "Cho doi nguoi choi ca hai doi de bat dau tran dau...";
+    return;
+  }
+
+  if (room.kickoffQuizEnabled === false) {
+    skipKickoffWithoutQuiz(room);
     return;
   }
 
@@ -2061,11 +2091,21 @@ function handleJoinFixed4vs4(socket, { playerName, preferredTeam }) {
   joinRoom(socket, FIXED_4VS4_ROOM_ID, playerName || profileName, preferredTeam);
 }
 
-function joinRoom(socket, roomId, playerName, preferredTeam) {
+function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
   const room = rooms.get(roomId);
   if (!room) {
     socket.emit("room-error", { message: "Phong khong ton tai." });
     return;
+  }
+
+  const humanPlayersBeforeJoin = Object.values(room.players).filter((player) => !player.isBot);
+  if (
+    humanPlayersBeforeJoin.length === 0 &&
+    typeof options.kickoffQuizEnabled === "boolean"
+  ) {
+    room.kickoffQuizEnabled = options.kickoffQuizEnabled;
+  } else if (room.kickoffQuizEnabled == null) {
+    room.kickoffQuizEnabled = true;
   }
 
   let team = null;
@@ -2169,6 +2209,7 @@ io.on("connection", (socket) => {
       gameMode: room.gameMode,
       players: Object.keys(room.players).length,
       capacity: MAX_PLAYERS,
+      kickoffQuizEnabled: room.kickoffQuizEnabled !== false,
       ...getTeamAvailability(room)
     });
   });
@@ -2228,9 +2269,12 @@ io.on("connection", (socket) => {
     joinRoom(socket, finalRoomId, playerName || profileName);
   });
 
-  socket.on("join-room", ({ roomId, playerName, preferredTeam }) => {
+  socket.on("join-room", ({ roomId, playerName, preferredTeam, kickoffQuizEnabled }) => {
     const profileName = socketProfiles.get(socket.id)?.playerName;
-    joinRoom(socket, String(roomId || "").trim(), playerName || profileName, preferredTeam);
+    joinRoom(socket, String(roomId || "").trim(), playerName || profileName, preferredTeam, {
+      kickoffQuizEnabled:
+        typeof kickoffQuizEnabled === "boolean" ? kickoffQuizEnabled : undefined
+    });
   });
 
   // 4vs4: vao phong tu dong (khong can nhap ma phong).

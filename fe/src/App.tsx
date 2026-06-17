@@ -49,6 +49,9 @@ export default function App() {
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
   const [selectedMode, setSelectedMode] = useState<GameMode | null>("4vs4");
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
+  const [kickoffQuizEnabled, setKickoffQuizEnabled] = useState(
+    () => localStorage.getItem("kickoffQuizEnabled") !== "false"
+  );
   const pendingNoticeRef = useRef<string | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
   const [teamAvailability, setTeamAvailability] = useState({
@@ -102,6 +105,8 @@ export default function App() {
       maxTeamSize?: number;
       redFull?: boolean;
       blueFull?: boolean;
+      kickoffQuizEnabled?: boolean;
+      players?: number;
     }) => {
       if (!payload?.exists) {
         setTeamAvailability((prev) => ({
@@ -115,6 +120,11 @@ export default function App() {
         return;
       }
 
+      if (typeof payload.kickoffQuizEnabled === "boolean") {
+        setKickoffQuizEnabled(payload.kickoffQuizEnabled);
+        localStorage.setItem("kickoffQuizEnabled", String(payload.kickoffQuizEnabled));
+      }
+
       setTeamAvailability({
         exists: true,
         redCount: payload.redCount ?? 0,
@@ -126,21 +136,6 @@ export default function App() {
     });
 
     socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
-      // #region agent log
-      fetch("http://127.0.0.1:7259/ingest/c84d0a3a-38d8-4338-8885-1547a65c33de", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2c2f92" },
-        body: JSON.stringify({
-          sessionId: "2c2f92",
-          runId: "post-fix",
-          hypothesisId: "H2",
-          location: "App.tsx:init",
-          message: "init received",
-          data: { myId: payload.myId },
-          timestamp: Date.now()
-        })
-      }).catch(() => {});
-      // #endregion
       if (joinTimeoutRef.current) {
         window.clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
@@ -272,6 +267,11 @@ export default function App() {
     }
   };
 
+  const handleToggleKickoffQuiz = (enabled: boolean) => {
+    setKickoffQuizEnabled(enabled);
+    localStorage.setItem("kickoffQuizEnabled", String(enabled));
+  };
+
   const handleJoinFixedRoom = () => {
     if (selectedMode !== "4vs4") {
       alert("Hãy chọn chế độ 4 vs 4 trước khi vào phòng.");
@@ -285,43 +285,12 @@ export default function App() {
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
-    // #region agent log
-    fetch("http://127.0.0.1:7259/ingest/c84d0a3a-38d8-4338-8885-1547a65c33de", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2c2f92" },
-      body: JSON.stringify({
-        sessionId: "2c2f92",
-        runId: "post-fix",
-        hypothesisId: "H2",
-        location: "App.tsx:handleJoinFixedRoom",
-        message: "emit join-room",
-        data: { socketUrl: SOCKET_URL, connected: socket.connected, roomId: FIXED_4VS4_ROOM_ID, team: selectedTeam },
-        timestamp: Date.now()
-      })
-    }).catch(() => {});
-    // #endregion
-
     pendingNoticeRef.current = "Vào phòng thành công!";
     if (joinTimeoutRef.current) {
       window.clearTimeout(joinTimeoutRef.current);
     }
     joinTimeoutRef.current = window.setTimeout(() => {
       joinTimeoutRef.current = null;
-      // #region agent log
-      fetch("http://127.0.0.1:7259/ingest/c84d0a3a-38d8-4338-8885-1547a65c33de", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2c2f92" },
-        body: JSON.stringify({
-          sessionId: "2c2f92",
-          runId: "post-fix",
-          hypothesisId: "H2",
-          location: "App.tsx:joinTimeout",
-          message: "join timeout fired",
-          data: { socketUrl: SOCKET_URL },
-          timestamp: Date.now()
-        })
-      }).catch(() => {});
-      // #endregion
       alert(
         "Không nhận phản hồi từ server khi vào phòng. Hãy restart backend (npm run dev trong be/) hoặc đợi deploy backend mới."
       );
@@ -330,7 +299,8 @@ export default function App() {
     socket.emit("join-room", {
       roomId: FIXED_4VS4_ROOM_ID,
       playerName: finalName,
-      preferredTeam: selectedTeam
+      preferredTeam: selectedTeam,
+      kickoffQuizEnabled
     });
   };
 
@@ -415,6 +385,8 @@ export default function App() {
           onPlayerNameChange={setPlayerName}
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
+          kickoffQuizEnabled={kickoffQuizEnabled}
+          onToggleKickoffQuiz={handleToggleKickoffQuiz}
           onJoinFixedRoom={handleJoinFixedRoom}
           onExit={handleExit}
         />
