@@ -126,6 +126,21 @@ export default function App() {
     });
 
     socket.on("init", (payload: Omit<GameState, "myId"> & { myId: string }) => {
+      // #region agent log
+      fetch("http://127.0.0.1:7259/ingest/c84d0a3a-38d8-4338-8885-1547a65c33de", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2c2f92" },
+        body: JSON.stringify({
+          sessionId: "2c2f92",
+          runId: "post-fix",
+          hypothesisId: "H2",
+          location: "App.tsx:init",
+          message: "init received",
+          data: { myId: payload.myId },
+          timestamp: Date.now()
+        })
+      }).catch(() => {});
+      // #endregion
       if (joinTimeoutRef.current) {
         window.clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
@@ -270,18 +285,53 @@ export default function App() {
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
+    // #region agent log
+    fetch("http://127.0.0.1:7259/ingest/c84d0a3a-38d8-4338-8885-1547a65c33de", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2c2f92" },
+      body: JSON.stringify({
+        sessionId: "2c2f92",
+        runId: "post-fix",
+        hypothesisId: "H2",
+        location: "App.tsx:handleJoinFixedRoom",
+        message: "emit join-room",
+        data: { socketUrl: SOCKET_URL, connected: socket.connected, roomId: FIXED_4VS4_ROOM_ID, team: selectedTeam },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
+
     pendingNoticeRef.current = "Vào phòng thành công!";
     if (joinTimeoutRef.current) {
       window.clearTimeout(joinTimeoutRef.current);
     }
     joinTimeoutRef.current = window.setTimeout(() => {
       joinTimeoutRef.current = null;
+      // #region agent log
+      fetch("http://127.0.0.1:7259/ingest/c84d0a3a-38d8-4338-8885-1547a65c33de", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2c2f92" },
+        body: JSON.stringify({
+          sessionId: "2c2f92",
+          runId: "post-fix",
+          hypothesisId: "H2",
+          location: "App.tsx:joinTimeout",
+          message: "join timeout fired",
+          data: { socketUrl: SOCKET_URL },
+          timestamp: Date.now()
+        })
+      }).catch(() => {});
+      // #endregion
       alert(
         "Không nhận phản hồi từ server khi vào phòng. Hãy restart backend (npm run dev trong be/) hoặc đợi deploy backend mới."
       );
       setShowMenu(true);
     }, 8000);
-    socket.emit("join-fixed-4vs4", { playerName: finalName, preferredTeam: selectedTeam });
+    socket.emit("join-room", {
+      roomId: FIXED_4VS4_ROOM_ID,
+      playerName: finalName,
+      preferredTeam: selectedTeam
+    });
   };
 
   const handlePlayAgain = () => {
