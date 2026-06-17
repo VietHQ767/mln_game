@@ -101,6 +101,7 @@ const DUEL_FREEZE_MS = 3000;
 const DUEL_COOLDOWN_MS = 3000;
 const MATCH_WIN_SCORE = 15;
 const POST_GOAL_WAIT_MS = 3000;
+const KICKOFF_WAIT_MS = 10000;
 const BOT_SPEED = 2.1;
 
 const TEAM_RED = "RED";
@@ -221,7 +222,11 @@ function enforceSetPieceKeepOut(taker, player) {
 }
 
 function isGameplayBlocked(room) {
-  return room.match.phase === "FINISHED" || room.match.phase === "POST_GOAL";
+  return (
+    room.match.phase === "FINISHED" ||
+    room.match.phase === "POST_GOAL" ||
+    room.match.phase === "PRE_KICKOFF_WAIT"
+  );
 }
 
 function applyMoveInput(room, player, inputState) {
@@ -343,10 +348,23 @@ function createEmptyRoom(roomId, roomName) {
       setPiece: null,
       kickoffDone: false,
       winnerTeam: null,
-      postGoal: null
+      postGoal: null,
+      kickoffWaitUntil: null
     },
-    kickoffQuizEnabled: true
+    kickoffQuizEnabled: true,
+    testModeEnabled: false
   };
+}
+
+function isTestMode(room) {
+  return Boolean(room.testModeEnabled || room.match?.testModeEnabled);
+}
+
+function applyTestModeFlags(room, enabled) {
+  room.testModeEnabled = Boolean(enabled);
+  if (room.match) {
+    room.match.testModeEnabled = Boolean(enabled);
+  }
 }
 
 function getRoomListPayload() {
@@ -469,9 +487,27 @@ function endMatch(room, winnerTeam) {
   const winnerLabel = winnerTeam === TEAM_RED ? "Doi Do" : "Doi Xanh";
   room.match.notice = `${winnerLabel} thang tran ${room.score.RED}-${room.score.BLUE}! Dat ${MATCH_WIN_SCORE} diem.`;
   freezeAllInputs(room);
+  io.to(room.id).emit("gameState", buildRoomGameState(room));
 }
 
-function registerGoal(room, scoringTeam) {
+function ensurePlayerStats(player) {
+  if (!player) return;
+  if (typeof player.goals !== "number") player.goals = 0;
+  if (typeof player.correctAnswers !== "number") player.correctAnswers = 0;
+  if (typeof player.wrongAnswers !== "number") player.wrongAnswers = 0;
+}
+
+function registerGoal(room, scoringTeam, scorerId = null) {
+  let scorer = scorerId ? room.players[scorerId] : null;
+  if (!scorer) {
+    const lastTouch = room.lastTouchPlayerId ? room.players[room.lastTouchPlayerId] : null;
+    if (lastTouch && lastTouch.team === scoringTeam) scorer = lastTouch;
+  }
+  if (scorer) {
+    ensurePlayerStats(scorer);
+    scorer.goals += 1;
+  }
+
   room.score[scoringTeam] += 1;
   if (room.score[scoringTeam] >= MATCH_WIN_SCORE) {
     endMatch(room, scoringTeam);
@@ -490,6 +526,7 @@ function resetMatch(room) {
   room.match.kickoffDone = false;
   room.match.winnerTeam = null;
   room.match.postGoal = null;
+  room.match.kickoffWaitUntil = null;
   room.ballHolderId = null;
   room.ball.x = FIELD_WIDTH / 2;
   room.ball.y = FIELD_HEIGHT / 2;
@@ -499,7 +536,18 @@ function resetMatch(room) {
   room.lastTouchPlayerId = null;
   room.botPassTargetId = null;
   room.botCarrierId = null;
+  Object.values(room.players).forEach((player) => {
+    ensurePlayerStats(player);
+    player.goals = 0;
+    player.correctAnswers = 0;
+    player.wrongAnswers = 0;
+  });
   resetPlayersToHomePositions(room);
+  if (isTestMode(room)) {
+    const human = Object.values(room.players).find((player) => !player.isBot);
+    if (human) startTestModePlay(room, human.id);
+    return;
+  }
   maybeStartKickoff(room);
 }
 
@@ -541,7 +589,10 @@ function createPlayer(socketId, room, team, preferredName) {
     energy: ENERGY_MAX,
     frozenUntil: 0,
     homeX: spawn.x,
-    homeY: spawn.y
+    homeY: spawn.y,
+    goals: 0,
+    correctAnswers: 0,
+    wrongAnswers: 0
   };
 }
 
@@ -718,7 +769,10 @@ function buildRoomGameState(room) {
             receivingTeam: room.match.postGoal.receivingTeam,
             resumeAt: room.match.postGoal.resumeAt
           }
-        : null
+        : null,
+      kickoffWaitUntil: room.match.kickoffWaitUntil ?? null,
+      kickoffQuizEnabled: room.kickoffQuizEnabled !== false,
+      testModeEnabled: isTestMode(room)
     },
     ballHolderId: room.ballHolderId,
     score: room.score
@@ -875,17 +929,44 @@ function skipKickoffWithoutQuiz(room) {
   room.match.notice = "Tran dau bat dau!";
 }
 
-function maybeStartKickoff(room) {
-  if (room.gameMode !== "4vs4") return;
-  if (room.match.kickoffDone || room.match.duel) return;
+function startTestModePlay(room, playerId) {
+  const player = room.players[playerId];
+  if (!player) return;
 
-  if (!hasHumanOnTeam(room, TEAM_RED) || !hasHumanOnTeam(room, TEAM_BLUE)) {
-    room.match.notice = "Cho doi nguoi choi ca hai doi de bat dau tran dau...";
-    return;
-  }
+  const offsetX = player.team === TEAM_RED ? -35 : 35;
+  player.x = clamp(
+    FIELD_WIDTH / 2 + offsetX,
+    PLAY_MIN_X + player.radius,
+    PLAY_MAX_X - player.radius
+  );
+  player.y = clamp(FIELD_HEIGHT / 2, PLAY_MIN_Y + player.radius, PLAY_MAX_Y - player.radius);
+  player.direction = { dx: player.team === TEAM_RED ? 1 : -1, dy: 0 };
+
+  room.match.phase = "PLAYING";
+  room.match.kickoffDone = true;
+  room.match.kickoffWaitUntil = null;
+  room.match.duel = null;
+  room.ballHolderId = playerId;
+  room.ball.x = FIELD_WIDTH / 2;
+  room.ball.y = FIELD_HEIGHT / 2;
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+  updateBallToHolder(room);
+  room.lastTouchTeam = player.team;
+  room.lastTouchPlayerId = playerId;
+  applyTestModeFlags(room, true);
+  room.match.notice = "Che do test - dieu khien bong ngay!";
+}
+
+function finishKickoffWait(room) {
+  if (room.match.phase !== "PRE_KICKOFF_WAIT") return;
+
+  room.match.phase = "PLAYING";
+  room.match.kickoffWaitUntil = null;
 
   if (room.kickoffQuizEnabled === false) {
     skipKickoffWithoutQuiz(room);
+    io.to(room.id).emit("gameState", buildRoomGameState(room));
     return;
   }
 
@@ -894,6 +975,24 @@ function maybeStartKickoff(room) {
   if (!redRep || !blueRep) return;
 
   startKickoffDuel(room, redRep, blueRep);
+  io.to(room.id).emit("gameState", buildRoomGameState(room));
+}
+
+function maybeStartKickoff(room) {
+  if (room.gameMode !== "4vs4") return;
+  if (isTestMode(room)) return;
+  if (room.match.kickoffDone || room.match.duel) return;
+  if (room.match.phase === "PRE_KICKOFF_WAIT") return;
+
+  if (!hasHumanOnTeam(room, TEAM_RED) || !hasHumanOnTeam(room, TEAM_BLUE)) {
+    room.match.notice = "Cho doi nguoi choi ca hai doi de bat dau tran dau...";
+    return;
+  }
+
+  room.match.phase = "PRE_KICKOFF_WAIT";
+  room.match.kickoffWaitUntil = Date.now() + KICKOFF_WAIT_MS;
+  room.match.notice = "Chuan bi vao san - cho 10 giay truoc khi bat dau...";
+  io.to(room.id).emit("gameState", buildRoomGameState(room));
 }
 
 function startKickoffDuel(room, redRep, blueRep) {
@@ -957,8 +1056,17 @@ function resolveGoalShooter(room, scoringTeam, goalSpot) {
 }
 
 function startGoalQuiz(room, scoringTeam, goalSpot) {
-  const defendingTeam = getOpponentTeam(scoringTeam);
   const shooter = resolveGoalShooter(room, scoringTeam, goalSpot);
+
+  if (isTestMode(room)) {
+    const matchEnded = registerGoal(room, scoringTeam, shooter?.id ?? null);
+    if (!matchEnded) {
+      room.match.notice = `${scoringTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} ghi ban (che do test)!`;
+    }
+    return;
+  }
+
+  const defendingTeam = getOpponentTeam(scoringTeam);
 
   if (!shooter) {
     registerGoal(room, scoringTeam);
@@ -968,7 +1076,7 @@ function startGoalQuiz(room, scoringTeam, goalSpot) {
   if (shooter.isBot) {
     const willScore = Math.random() < 0.45;
     if (willScore) {
-      registerGoal(room, scoringTeam);
+      registerGoal(room, scoringTeam, shooter.id);
     } else {
       const sideLabel = goalSpot.x < PLAY_MIN_X ? "ben trai" : "ben phai";
       awardGoalKick(
@@ -1426,6 +1534,13 @@ function handleBoundaryChecks(room) {
   const inGoalMouth = outY >= GOAL_Y_MIN && outY <= GOAL_Y_MAX;
   if (isOutHorizontal && inGoalMouth) {
     const scoredTeam = outX < PLAY_MIN_X ? TEAM_BLUE : TEAM_RED;
+    if (isTestMode(room)) {
+      const matchEnded = registerGoal(room, scoredTeam, room.lastTouchPlayerId);
+      if (!matchEnded) {
+        room.match.notice = `${scoredTeam === TEAM_RED ? "Doi Do" : "Doi Xanh"} ghi ban (che do test)!`;
+      }
+      return;
+    }
     startGoalQuiz(room, scoredTeam, { x: outX, y: outY });
     return;
   }
@@ -1644,7 +1759,7 @@ function resolveDuelOutcome(room, reason = "finished") {
     room.match.duel = null;
 
     if (isCorrect) {
-      registerGoal(room, scoringTeam);
+      registerGoal(room, scoringTeam, shooterId);
     } else {
       awardGoalKick(
         room,
@@ -1804,9 +1919,25 @@ function updateRoom(room) {
     return;
   }
 
+  if (room.match.phase === "PRE_KICKOFF_WAIT") {
+    for (const player of Object.values(room.players)) {
+      player.input = { up: false, down: false, left: false, right: false };
+    }
+
+    if (room.match.kickoffWaitUntil && Date.now() >= room.match.kickoffWaitUntil) {
+      finishKickoffWait(room);
+    }
+    return;
+  }
+
   if (room.match.phase === "PLAYING") {
     if (!room.match.kickoffDone && !room.match.duel) {
-      maybeStartKickoff(room);
+      if (isTestMode(room)) {
+        const human = Object.values(room.players).find((player) => !player.isBot);
+        if (human) startTestModePlay(room, human.id);
+      } else {
+        maybeStartKickoff(room);
+      }
     }
 
     const allPlayers = Object.values(room.players);
@@ -2027,7 +2158,11 @@ function removePlayerFromRoom(socketId) {
   }
 
   if (Object.keys(room.players).length === 0) {
-    rooms.delete(roomId);
+    if (roomId === FIXED_4VS4_ROOM_ID) {
+      resetFixed4vs4RoomState(room);
+    } else {
+      rooms.delete(roomId);
+    }
   } else {
     if (room.gameMode === "1vsBot") {
       const humanCount = Object.values(room.players).filter((player) => !player.isBot).length;
@@ -2051,6 +2186,33 @@ function removePlayerFromRoom(socketId) {
   }
 
   emitRoomListToAll();
+}
+
+function resetFixed4vs4RoomState(room) {
+  room.players = {};
+  room.playerCounter = 0;
+  room.ballHolderId = null;
+  room.ball.x = FIELD_WIDTH / 2;
+  room.ball.y = FIELD_HEIGHT / 2;
+  room.ball.vx = 0;
+  room.ball.vy = 0;
+  room.lastTouchTeam = null;
+  room.lastTouchPlayerId = null;
+  room.botCarrierId = null;
+  room.botPassTargetId = null;
+  room.score = { RED: 0, BLUE: 0 };
+  room.match = {
+    phase: "PLAYING",
+    duel: null,
+    notice: "",
+    setPiece: null,
+    kickoffDone: false,
+    winnerTeam: null,
+    postGoal: null,
+    kickoffWaitUntil: null
+  };
+  room.kickoffQuizEnabled = true;
+  applyTestModeFlags(room, false);
 }
 
 function normalizeFixed4vs4Room(room) {
@@ -2092,24 +2254,31 @@ function handleJoinFixed4vs4(socket, { playerName, preferredTeam }) {
 }
 
 function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
-  const room = rooms.get(roomId);
+  if (roomId === FIXED_4VS4_ROOM_ID) {
+    ensureFixed4vs4Room();
+  }
+
+  let room = rooms.get(roomId);
   if (!room) {
     socket.emit("room-error", { message: "Phong khong ton tai." });
     return;
   }
 
-  const humanPlayersBeforeJoin = Object.values(room.players).filter((player) => !player.isBot);
-  if (
-    humanPlayersBeforeJoin.length === 0 &&
-    typeof options.kickoffQuizEnabled === "boolean"
-  ) {
-    room.kickoffQuizEnabled = options.kickoffQuizEnabled;
-  } else if (room.kickoffQuizEnabled == null) {
-    room.kickoffQuizEnabled = true;
-  }
+  const otherHumansBeforeJoin = Object.values(room.players).filter(
+    (player) => !player.isBot && player.id !== socket.id
+  );
+  const canSetRoomOptions = otherHumansBeforeJoin.length === 0;
+  const pendingKickoffQuiz =
+    canSetRoomOptions && typeof options.kickoffQuizEnabled === "boolean"
+      ? options.kickoffQuizEnabled
+      : null;
+  const pendingTestMode =
+    canSetRoomOptions && typeof options.testModeEnabled === "boolean"
+      ? options.testModeEnabled
+      : null;
 
   let team = null;
-  const humanPlayers = Object.values(room.players).filter((player) => !player.isBot);
+  const humanPlayers = otherHumansBeforeJoin;
 
   if (room.gameMode === "1vsBot") {
     // 1vsMay: phong chi cho 1 nguoi that doi dau 11 bot.
@@ -2127,7 +2296,10 @@ function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
     team = TEAM_RED;
   } else {
     // 4vs4: nguoi choi tu chon doi; doi day thi chi cho phep doi con lai.
-    if (Object.keys(room.players).length >= MAX_PLAYERS) {
+    const activePlayerCount = Object.keys(room.players).filter(
+      (playerId) => playerId !== socket.id
+    ).length;
+    if (activePlayerCount >= MAX_PLAYERS) {
       socket.emit("room-full", { message: `Phong da du ${MAX_PLAYERS} nguoi choi.` });
       return;
     }
@@ -2141,10 +2313,46 @@ function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
 
   removePlayerFromRoom(socket.id);
 
+  room = rooms.get(roomId);
+  if (!room) {
+    if (roomId === FIXED_4VS4_ROOM_ID) {
+      ensureFixed4vs4Room();
+      room = rooms.get(roomId);
+    }
+    if (!room) {
+      socket.emit("room-error", { message: "Phong khong ton tai." });
+      return;
+    }
+  }
+
+  if (pendingKickoffQuiz !== null) {
+    room.kickoffQuizEnabled = pendingKickoffQuiz;
+  } else if (room.kickoffQuizEnabled == null) {
+    room.kickoffQuizEnabled = true;
+  }
+  if (pendingTestMode !== null) {
+    applyTestModeFlags(room, pendingTestMode);
+  } else if (room.testModeEnabled == null) {
+    applyTestModeFlags(room, false);
+  }
+
   const player = createPlayer(socket.id, room, team, playerName);
   room.players[socket.id] = player;
   socketToRoom.set(socket.id, room.id);
   socket.join(room.id);
+
+  emitRoomListToAll();
+  const shouldStartTest =
+    !room.match.kickoffDone &&
+    (isTestMode(room) || options.testModeEnabled === true);
+  if (shouldStartTest) {
+    applyTestModeFlags(room, true);
+    startTestModePlay(room, socket.id);
+  } else if (options.testModeEnabled === true) {
+    applyTestModeFlags(room, true);
+  } else if (!isTestMode(room)) {
+    maybeStartKickoff(room);
+  }
 
   socket.emit("init", {
     myId: socket.id,
@@ -2177,7 +2385,6 @@ function joinRoom(socket, roomId, playerName, preferredTeam, options = {}) {
   }
 
   emitRoomListToAll();
-  maybeStartKickoff(room);
   io.to(room.id).emit("gameState", buildRoomGameState(room));
 }
 
@@ -2210,6 +2417,7 @@ io.on("connection", (socket) => {
       players: Object.keys(room.players).length,
       capacity: MAX_PLAYERS,
       kickoffQuizEnabled: room.kickoffQuizEnabled !== false,
+      testModeEnabled: isTestMode(room),
       ...getTeamAvailability(room)
     });
   });
@@ -2269,11 +2477,16 @@ io.on("connection", (socket) => {
     joinRoom(socket, finalRoomId, playerName || profileName);
   });
 
-  socket.on("join-room", ({ roomId, playerName, preferredTeam, kickoffQuizEnabled }) => {
+  socket.on("join-room", ({ roomId, playerName, preferredTeam, kickoffQuizEnabled, testModeEnabled }) => {
     const profileName = socketProfiles.get(socket.id)?.playerName;
-    joinRoom(socket, String(roomId || "").trim(), playerName || profileName, preferredTeam, {
+    const normalizedId = String(roomId || "").trim();
+    if (normalizedId === FIXED_4VS4_ROOM_ID || normalizedId === "11vs11-room") {
+      ensureFixed4vs4Room();
+    }
+    joinRoom(socket, normalizedId, playerName || profileName, preferredTeam, {
       kickoffQuizEnabled:
-        typeof kickoffQuizEnabled === "boolean" ? kickoffQuizEnabled : undefined
+        typeof kickoffQuizEnabled === "boolean" ? kickoffQuizEnabled : undefined,
+      testModeEnabled: typeof testModeEnabled === "boolean" ? testModeEnabled : undefined
     });
   });
 
@@ -2485,8 +2698,21 @@ io.on("connection", (socket) => {
       submittedAt: Date.now(),
       isCorrect: answer === duel.correctAnswer
     };
+    const player = room.players[socket.id];
+    if (player) {
+      ensurePlayerStats(player);
+      if (duel.answers[socket.id].isCorrect) {
+        player.correctAnswers += 1;
+      } else {
+        player.wrongAnswers += 1;
+      }
+    }
 
     tryResolveDuel(room);
+  });
+
+  socket.on("leave-room", () => {
+    removePlayerFromRoom(socket.id);
   });
 
   socket.on("disconnect", () => {

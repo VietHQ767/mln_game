@@ -4,6 +4,8 @@ import BackgroundMusic from "./components/BackgroundMusic";
 import ButtonSoundEffects from "./components/ButtonSoundEffects";
 import GameCanvas from "./components/GameCanvas";
 import SettingsButton from "./components/SettingsButton";
+import KickoffWaitOverlay from "./components/KickoffWaitOverlay";
+import MatchEndOverlay from "./components/MatchEndOverlay";
 import HomePage from "./components/HomePage";
 import MainMenu from "./components/MainMenu";
 import QuizModal from "./components/QuizModal";
@@ -49,11 +51,16 @@ export default function App() {
   const [playerName, setPlayerName] = useState(localStorage.getItem("playerName") ?? "");
   const [selectedMode, setSelectedMode] = useState<GameMode | null>("4vs4");
   const [selectedTeam, setSelectedTeam] = useState<TeamChoice>("RED");
-  const [kickoffQuizEnabled, setKickoffQuizEnabled] = useState(
-    () => localStorage.getItem("kickoffQuizEnabled") !== "false"
+  const [testModeEnabled, setTestModeEnabled] = useState(
+    () => localStorage.getItem("testModeEnabled") === "true"
   );
+  const [kickoffQuizEnabled, setKickoffQuizEnabled] = useState(() => {
+    if (localStorage.getItem("testModeEnabled") === "true") return false;
+    return localStorage.getItem("kickoffQuizEnabled") !== "false";
+  });
   const pendingNoticeRef = useRef<string | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
+  const testModeActiveRef = useRef(false);
   const [teamAvailability, setTeamAvailability] = useState({
     exists: false,
     redCount: 0,
@@ -106,6 +113,7 @@ export default function App() {
       redFull?: boolean;
       blueFull?: boolean;
       kickoffQuizEnabled?: boolean;
+      testModeEnabled?: boolean;
       players?: number;
     }) => {
       if (!payload?.exists) {
@@ -120,9 +128,27 @@ export default function App() {
         return;
       }
 
-      if (typeof payload.kickoffQuizEnabled === "boolean") {
-        setKickoffQuizEnabled(payload.kickoffQuizEnabled);
-        localStorage.setItem("kickoffQuizEnabled", String(payload.kickoffQuizEnabled));
+      const roomPlayerCount = (payload.redCount ?? 0) + (payload.blueCount ?? 0);
+      const roomHasPlayers = roomPlayerCount > 0;
+
+      // Chi dong bo cai dat phong khi da co nguoi — phong trong thi giu lua chon local.
+      if (roomHasPlayers) {
+        if (typeof payload.testModeEnabled === "boolean") {
+          setTestModeEnabled(payload.testModeEnabled);
+          localStorage.setItem("testModeEnabled", String(payload.testModeEnabled));
+          if (payload.testModeEnabled) {
+            setKickoffQuizEnabled(false);
+            localStorage.setItem("kickoffQuizEnabled", "false");
+          }
+        }
+        if (typeof payload.kickoffQuizEnabled === "boolean") {
+          setKickoffQuizEnabled(payload.kickoffQuizEnabled);
+          localStorage.setItem("kickoffQuizEnabled", String(payload.kickoffQuizEnabled));
+          if (payload.kickoffQuizEnabled) {
+            setTestModeEnabled(false);
+            localStorage.setItem("testModeEnabled", "false");
+          }
+        }
       }
 
       setTeamAvailability({
@@ -141,6 +167,7 @@ export default function App() {
         joinTimeoutRef.current = null;
       }
       setGameState({ ...payload, myId: payload.myId });
+      testModeActiveRef.current = Boolean(payload.match?.testModeEnabled);
       // Chỉ ẩn menu khi server xác nhận vào phòng thành công.
       setShowMenu(false);
       const notice = pendingNoticeRef.current;
@@ -150,13 +177,18 @@ export default function App() {
       }
     });
     socket.on("gameState", (payload: Omit<GameState, "myId">) => {
-      setGameState((prev) => ({ ...prev, ...payload }));
+      setGameState((prev) => {
+        const next = { ...prev, ...payload };
+        testModeActiveRef.current = Boolean(next.match?.testModeEnabled);
+        return next;
+      });
     });
     socket.on("room-error", (payload: { message?: string }) => {
       if (payload?.message) alert(payload.message);
       setShowMenu(true);
     });
     socket.on("start-duel", (payload: DuelPayload) => {
+      if (payload.kind === "goal" && testModeActiveRef.current) return;
       setDuelData(payload);
       setHasAnswered(false);
     });
@@ -208,7 +240,7 @@ export default function App() {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (showMenu) return;
+      if (showMenu || gameState.match.phase === "PRE_KICKOFF_WAIT") return;
 
       if (event.code === "Space") {
         event.preventDefault();
@@ -239,7 +271,7 @@ export default function App() {
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      if (showMenu) return;
+      if (showMenu || gameState.match.phase === "PRE_KICKOFF_WAIT") return;
       if (event.code === "Space") return;
       const dir = keyMap[event.key as keyof typeof keyMap];
       if (!dir) return;
@@ -270,6 +302,19 @@ export default function App() {
   const handleToggleKickoffQuiz = (enabled: boolean) => {
     setKickoffQuizEnabled(enabled);
     localStorage.setItem("kickoffQuizEnabled", String(enabled));
+    if (enabled) {
+      setTestModeEnabled(false);
+      localStorage.setItem("testModeEnabled", "false");
+    }
+  };
+
+  const handleToggleTestMode = (enabled: boolean) => {
+    setTestModeEnabled(enabled);
+    localStorage.setItem("testModeEnabled", String(enabled));
+    if (enabled) {
+      setKickoffQuizEnabled(false);
+      localStorage.setItem("kickoffQuizEnabled", "false");
+    }
   };
 
   const handleJoinFixedRoom = () => {
@@ -285,7 +330,9 @@ export default function App() {
     localStorage.setItem("playerName", finalName);
     socket.emit("set-player-profile", { playerName: finalName });
 
-    pendingNoticeRef.current = "Vào phòng thành công!";
+    pendingNoticeRef.current = testModeEnabled
+      ? "Vào phòng test — điều khiển bóng ngay!"
+      : "Vào phòng thành công!";
     if (joinTimeoutRef.current) {
       window.clearTimeout(joinTimeoutRef.current);
     }
@@ -300,7 +347,8 @@ export default function App() {
       roomId: FIXED_4VS4_ROOM_ID,
       playerName: finalName,
       preferredTeam: selectedTeam,
-      kickoffQuizEnabled
+      kickoffQuizEnabled: testModeEnabled ? false : kickoffQuizEnabled,
+      testModeEnabled
     });
   };
 
@@ -309,6 +357,7 @@ export default function App() {
   };
 
   const handleBackToMenu = () => {
+    socket.emit("leave-room");
     setShowMenu(true);
     setShowHomePage(false);
   };
@@ -319,6 +368,7 @@ export default function App() {
   };
 
   const handleExit = () => {
+    socket.emit("leave-room");
     setShowHomePage(true);
     setShowMenu(false);
   };
@@ -330,6 +380,7 @@ export default function App() {
   };
 
   function handleShootBall(mouseX: number, mouseY: number) {
+    if (gameState.match.phase === "PRE_KICKOFF_WAIT") return;
     if (!gameState.myId) return;
     const isSetPieceTaker = gameState.match.setPiece?.takerId === gameState.myId;
     const isCornerKick =
@@ -349,6 +400,7 @@ export default function App() {
   }
 
   function handlePassBall(targetPlayerId: string) {
+    if (gameState.match.phase === "PRE_KICKOFF_WAIT") return;
     if (!gameState.myId) return;
 
     const isThrowInTaker =
@@ -386,7 +438,9 @@ export default function App() {
           onSelectMode={handleSelectMode}
           onSelectTeam={setSelectedTeam}
           kickoffQuizEnabled={kickoffQuizEnabled}
+          testModeEnabled={testModeEnabled}
           onToggleKickoffQuiz={handleToggleKickoffQuiz}
+          onToggleTestMode={handleToggleTestMode}
           onJoinFixedRoom={handleJoinFixedRoom}
           onExit={handleExit}
         />
@@ -404,13 +458,25 @@ export default function App() {
               blue={gameState.score?.BLUE ?? 0}
               winTarget={gameState.match.winTarget}
             />
+            <KickoffWaitOverlay
+              active={
+                gameState.match.phase === "PRE_KICKOFF_WAIT" &&
+                !gameState.match.testModeEnabled
+              }
+              resumeAt={gameState.match.kickoffWaitUntil}
+              kickoffQuizEnabled={gameState.match.kickoffQuizEnabled ?? kickoffQuizEnabled}
+            />
             <div
               className={`pointer-events-none fixed left-1/2 z-20 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur ${
                 showEnergyCharger ? "top-44" : "top-4"
               }`}
             >
               {gameState.match.notice ||
-                (!gameState.match.kickoffDone && gameState.match.phase === "PLAYING"
+                (gameState.match.phase === "PRE_KICKOFF_WAIT"
+                  ? "Chuẩn bị vào sân - vui lòng đợi..."
+                  : gameState.match.testModeEnabled && gameState.match.phase === "PLAYING"
+                  ? "Chế độ test — ghi bàn không cần trả lời câu hỏi"
+                  : !gameState.match.kickoffDone && gameState.match.phase === "PLAYING"
                   ? "Chờ đợi cả hai đội để bắt đầu trận đấu..."
                   : gameState.match.phase === "PLAYING"
                   ? "Bóng đang sống"
@@ -438,41 +504,28 @@ export default function App() {
                             ? gameState.match.notice || "Trận đấu đã kết thúc"
                           : "Bóng đang sống")}
             </div>
-            {gameState.match.phase === "FINISHED" && (
-              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
-                <div className="w-[min(92vw,24rem)] rounded-2xl border border-amber-400/40 bg-slate-900 p-6 text-center shadow-2xl">
-                  <h2 className="mb-2 text-2xl font-bold text-amber-300">Kết thúc trận đấu</h2>
-                  <p className="mb-1 text-lg font-semibold text-white">
-                    {gameState.match.winnerTeam === "RED"
-                      ? "Đội Đỏ thắng!"
-                      : gameState.match.winnerTeam === "BLUE"
-                        ? "Đội Xanh thắng!"
-                        : "Hòa?"}
-                  </p>
-                  <p className="mb-6 text-sm text-slate-300">
-                    Tỷ số: {gameState.score?.RED ?? 0} - {gameState.score?.BLUE ?? 0}
-                    {gameState.match.winTarget ? ` (mục tiêu ${gameState.match.winTarget} điểm)` : ""}
-                  </p>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-                    <button
-                      type="button"
-                      onClick={handlePlayAgain}
-                      className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
-                    >
-                      Chơi lại
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleBackToMenu}
-                      className="rounded-lg bg-slate-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-600"
-                    >
-                      Về menu
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-            <QuizModal duelData={duelData} answered={hasAnswered} onSubmitAnswer={submitAnswer} />
+            <MatchEndOverlay
+              active={gameState.match.phase === "FINISHED"}
+              winnerTeam={gameState.match.winnerTeam}
+              redScore={gameState.score?.RED ?? 0}
+              blueScore={gameState.score?.BLUE ?? 0}
+              players={gameState.players}
+              winTarget={gameState.match.winTarget ?? 15}
+              myTeam={
+                gameState.myId ? gameState.players[gameState.myId]?.team ?? null : null
+              }
+              onPlayAgain={handlePlayAgain}
+              onBackToMenu={handleBackToMenu}
+            />
+            <QuizModal
+              duelData={
+                gameState.match.testModeEnabled && duelData?.kind === "goal"
+                  ? null
+                  : duelData
+              }
+              answered={hasAnswered}
+              onSubmitAnswer={submitAnswer}
+            />
             <EnergyCharger
               open={showEnergyCharger}
               onClose={() => setShowEnergyCharger(false)}

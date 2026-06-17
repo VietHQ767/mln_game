@@ -13,10 +13,12 @@ interface MainMenuProps {
   teamRedFull: boolean;
   teamBlueFull: boolean;
   kickoffQuizEnabled: boolean;
+  testModeEnabled: boolean;
   onPlayerNameChange: (name: string) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectTeam: (team: TeamChoice) => void;
   onToggleKickoffQuiz: (enabled: boolean) => void;
+  onToggleTestMode: (enabled: boolean) => void;
   // 4vs4: luôn vào cùng 1 phòng duy nhất (không nhập mã phòng).
   onJoinFixedRoom: () => void;
   onExit: () => void;
@@ -32,10 +34,12 @@ export default function MainMenu({
   teamRedFull,
   teamBlueFull,
   kickoffQuizEnabled,
+  testModeEnabled,
   onPlayerNameChange,
   onSelectMode,
   onSelectTeam,
   onToggleKickoffQuiz,
+  onToggleTestMode,
   onJoinFixedRoom,
   onExit
 }: MainMenuProps) {
@@ -86,26 +90,53 @@ export default function MainMenu({
 
         {showRoomTools && (
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-850/70 p-3">
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2.5">
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2.5">
               <div>
                 <p className="text-sm font-semibold text-slate-100">Câu hỏi khởi đầu</p>
                 <p className="text-xs text-slate-400">
                   {roomHasPlayers
                     ? "Phòng đã có người — giữ cài đặt hiện tại"
-                    : "Tranh quyền giữ bóng trước khi trận đấu"}
+                    : testModeEnabled
+                      ? "Tắt khi bật chế độ Test"
+                      : "Tranh quyền giữ bóng trước khi trận đấu"}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => onToggleKickoffQuiz(!kickoffQuizEnabled)}
-                disabled={roomHasPlayers}
+                disabled={roomHasPlayers || testModeEnabled}
                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                   kickoffQuizEnabled
                     ? "bg-emerald-600/90 text-white"
                     : "bg-slate-700 text-slate-300"
-                } ${roomHasPlayers ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
+                } ${roomHasPlayers || testModeEnabled ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
               >
                 {kickoffQuizEnabled ? "Bật" : "Tắt"}
+              </button>
+            </div>
+
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-slate-800/80 px-3 py-2.5">
+              <div>
+                <p className="text-sm font-semibold text-amber-100">Test</p>
+                <p className="text-xs text-slate-400">
+                  {roomHasPlayers
+                    ? "Phòng đã có người — giữ cài đặt hiện tại"
+                    : kickoffQuizEnabled
+                      ? "Tắt khi bật câu hỏi khởi đầu"
+                      : "Điều khiển bóng ngay, ghi bàn không cần trả lời câu hỏi"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onToggleTestMode(!testModeEnabled)}
+                disabled={roomHasPlayers || kickoffQuizEnabled}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  testModeEnabled
+                    ? "bg-amber-500/90 text-white"
+                    : "bg-slate-700 text-slate-300"
+                } ${roomHasPlayers || kickoffQuizEnabled ? "cursor-not-allowed opacity-60" : "hover:brightness-110"}`}
+              >
+                {testModeEnabled ? "Bật" : "Tắt"}
               </button>
             </div>
 

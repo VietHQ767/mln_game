@@ -18,6 +18,9 @@ export interface Player {
   role?: string;
   energy?: number;
   frozenUntil?: number;
+  goals?: number;
+  correctAnswers?: number;
+  wrongAnswers?: number;
 }
 
 export interface Ball {
@@ -47,9 +50,20 @@ export interface GKDuelPayload {
 }
 
 export interface MatchState {
-  phase: "PLAYING" | "DUEL" | "THROW_IN" | "CORNER_KICK" | "GOAL_KICK" | "POST_GOAL" | "FINISHED";
+  phase:
+    | "PLAYING"
+    | "PRE_KICKOFF_WAIT"
+    | "DUEL"
+    | "THROW_IN"
+    | "CORNER_KICK"
+    | "GOAL_KICK"
+    | "POST_GOAL"
+    | "FINISHED";
   notice?: string;
   kickoffDone?: boolean;
+  kickoffWaitUntil?: number | null;
+  kickoffQuizEnabled?: boolean;
+  testModeEnabled?: boolean;
   winnerTeam?: "RED" | "BLUE" | null;
   winTarget?: number;
   postGoal?: {
