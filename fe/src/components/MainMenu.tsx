@@ -3,6 +3,8 @@ import { DoorClosed, ShieldOff, Swords, UserRound } from "lucide-react";
 export type GameMode = "6vs6" | "noRule";
 type TeamChoice = "RED" | "BLUE";
 
+// Menu fixed toggles: 6v6 always has kickoff question; No Rule always uses Keo-Bua-Bao disputes.
+
 interface MainMenuProps {
   playerName: string;
   selectedMode: GameMode | null;
