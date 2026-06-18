@@ -1,18 +1,33 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Settings } from "lucide-react";
+import { ArrowLeft, BookOpen, Settings } from "lucide-react";
 import { useAudioSettings } from "../contexts/AudioSettingsContext";
 import GameHelpContent from "./GameHelpContent";
 
 interface SettingsButtonProps {
   active: boolean;
+  variant?: "menu" | "match";
+  onBackToMenu?: () => void;
 }
 
 type SettingsView = "closed" | "settings" | "help";
 
-export default function SettingsButton({ active }: SettingsButtonProps) {
+export default function SettingsButton({
+  active,
+  variant = "menu",
+  onBackToMenu
+}: SettingsButtonProps) {
   const [view, setView] = useState<SettingsView>("closed");
-  const { musicVolume, sfxVolume, musicEnabled, setMusicVolume, setSfxVolume, setMusicEnabled } =
-    useAudioSettings();
+  const {
+    musicVolume,
+    sfxVolume,
+    musicEnabled,
+    matchMusicEnabled,
+    setMusicVolume,
+    setSfxVolume,
+    setMusicEnabled,
+    setMatchMusicEnabled
+  } = useAudioSettings();
+  const isMatch = variant === "match";
 
   useEffect(() => {
     if (view === "closed") return;
@@ -68,61 +83,110 @@ export default function SettingsButton({ active }: SettingsButtonProps) {
                 <h2 className="mb-6 text-center text-2xl font-bold text-white">Cài đặt</h2>
 
                 <div className="mb-5 space-y-4">
-                  <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <label htmlFor="music-volume" className="text-sm font-semibold text-slate-200">
-                        Nhạc nền
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setMusicEnabled(!musicEnabled)}
-                        className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                          musicEnabled
-                            ? "bg-emerald-600/80 text-white"
-                            : "bg-slate-700 text-slate-300"
-                        }`}
-                      >
-                        {musicEnabled ? "Bật" : "Tắt"}
-                      </button>
+                  {isMatch ? (
+                    <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <label htmlFor="match-music-volume" className="text-sm font-semibold text-slate-200">
+                          Nhạc trận đấu
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setMatchMusicEnabled(!matchMusicEnabled)}
+                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                            matchMusicEnabled
+                              ? "bg-emerald-600/80 text-white"
+                              : "bg-slate-700 text-slate-300"
+                          }`}
+                        >
+                          {matchMusicEnabled ? "Bật" : "Tắt"}
+                        </button>
+                      </div>
+                      <input
+                        id="match-music-volume"
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round(musicVolume * 100)}
+                        onChange={(event) => setMusicVolume(Number(event.target.value) / 100)}
+                        className="w-full accent-amber-400"
+                      />
+                      <p className="mt-2 text-xs text-slate-400">{Math.round(musicVolume * 100)}%</p>
                     </div>
-                    <input
-                      id="music-volume"
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={Math.round(musicVolume * 100)}
-                      onChange={(event) => setMusicVolume(Number(event.target.value) / 100)}
-                      className="w-full accent-sky-400"
-                    />
-                    <p className="mt-2 text-xs text-slate-400">{Math.round(musicVolume * 100)}%</p>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <label htmlFor="music-volume" className="text-sm font-semibold text-slate-200">
+                            Nhạc nền
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setMusicEnabled(!musicEnabled)}
+                            className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                              musicEnabled
+                                ? "bg-emerald-600/80 text-white"
+                                : "bg-slate-700 text-slate-300"
+                            }`}
+                          >
+                            {musicEnabled ? "Bật" : "Tắt"}
+                          </button>
+                        </div>
+                        <input
+                          id="music-volume"
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={Math.round(musicVolume * 100)}
+                          onChange={(event) => setMusicVolume(Number(event.target.value) / 100)}
+                          className="w-full accent-sky-400"
+                        />
+                        <p className="mt-2 text-xs text-slate-400">{Math.round(musicVolume * 100)}%</p>
+                      </div>
 
-                  <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
-                    <label htmlFor="sfx-volume" className="mb-3 block text-sm font-semibold text-slate-200">
-                      Hiệu ứng nút
-                    </label>
-                    <input
-                      id="sfx-volume"
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={Math.round(sfxVolume * 100)}
-                      onChange={(event) => setSfxVolume(Number(event.target.value) / 100)}
-                      className="w-full accent-amber-400"
-                    />
-                    <p className="mt-2 text-xs text-slate-400">{Math.round(sfxVolume * 100)}%</p>
-                  </div>
+                      <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                        <label htmlFor="sfx-volume" className="mb-3 block text-sm font-semibold text-slate-200">
+                          Hiệu ứng nút
+                        </label>
+                        <input
+                          id="sfx-volume"
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={Math.round(sfxVolume * 100)}
+                          onChange={(event) => setSfxVolume(Number(event.target.value) / 100)}
+                          className="w-full accent-amber-400"
+                        />
+                        <p className="mt-2 text-xs text-slate-400">{Math.round(sfxVolume * 100)}%</p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="grid gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setView("help")}
-                    className="flex items-center justify-center gap-2 rounded-xl border border-sky-400/40 bg-slate-800 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
-                  >
-                    <BookOpen size={18} />
-                    Hướng dẫn
-                  </button>
+                  {isMatch ? (
+                    onBackToMenu && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setView("closed");
+                          onBackToMenu();
+                        }}
+                        className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/40 bg-rose-500/20 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/30"
+                      >
+                        <ArrowLeft size={18} />
+                        Về menu
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setView("help")}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-sky-400/40 bg-slate-800 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
+                    >
+                      <BookOpen size={18} />
+                      Hướng dẫn
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleBack}

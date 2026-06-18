@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import BackgroundMusic from "./components/BackgroundMusic";
 import ButtonSoundEffects from "./components/ButtonSoundEffects";
+import BallKickSoundEffects from "./components/BallKickSoundEffects";
 import GameCanvas from "./components/GameCanvas";
 import SettingsButton from "./components/SettingsButton";
 import KickoffWaitOverlay from "./components/KickoffWaitOverlay";
@@ -14,6 +15,9 @@ import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
 import ScoreBoard from "./components/ScoreBoard";
 import RpsDuelModal from "./components/RpsDuelModal";
+import { loadSfxVolume } from "./utils/audioSettings";
+import { playGoalScoreSound } from "./utils/goalScoreSound";
+import { playMissedGoalSound } from "./utils/missedGoalSound";
 import type { DuelPayload, GameState, RpsChoice, RpsDuelPayload } from "./types";
 
 type TeamChoice = "RED" | "BLUE";
@@ -190,7 +194,13 @@ export default function App() {
       setRpsDuelData(null);
       setHasRpsSubmitted(false);
     });
-    socket.on("duel-result", () => {
+    socket.on("duel-result", (payload: { goalConfirmed?: boolean }) => {
+      const volume = loadSfxVolume();
+      if (payload?.goalConfirmed) {
+        playGoalScoreSound(volume);
+      } else if (payload?.goalConfirmed === false) {
+        playMissedGoalSound(volume);
+      }
       setDuelData(null);
       setRpsDuelData(null);
       setHasAnswered(false);
@@ -373,6 +383,14 @@ export default function App() {
 
   const handleBackToMenu = () => {
     socket.emit("leave-room");
+    setGameState(initialGameState);
+    setDuelData(null);
+    setRpsDuelData(null);
+    setHasAnswered(false);
+    setHasRpsSubmitted(false);
+    setShowEnergyCharger(false);
+    testModeActiveRef.current = false;
+    noRuleActiveRef.current = false;
     setShowMenu(true);
     setShowHomePage(false);
   };
@@ -437,7 +455,7 @@ export default function App() {
     <>
       <BackgroundMusic active={showHomePage || showMenu} />
       <ButtonSoundEffects active={showHomePage || showMenu} />
-      <SettingsButton active={showHomePage || showMenu} />
+      <SettingsButton active={showHomePage || showMenu} variant="menu" />
       {showHomePage ? (
         <HomePage onStart={handleStartFromHome} />
       ) : showMenu ? (
@@ -472,6 +490,11 @@ export default function App() {
               blue={gameState.score?.BLUE ?? 0}
               winTarget={gameState.match.winTarget}
             />
+            <SettingsButton
+              active
+              variant="match"
+              onBackToMenu={handleBackToMenu}
+            />
             <KickoffWaitOverlay
               active={
                 gameState.match.phase === "PRE_KICKOFF_WAIT" &&
@@ -480,7 +503,12 @@ export default function App() {
               resumeAt={gameState.match.kickoffWaitUntil}
               kickoffQuizEnabled={true}
             />
-            <MatchFieldMusic active={gameState.match.phase !== "FINISHED"} />
+            <MatchFieldMusic active={gameState.match.phase !== "FINISHED"} showToggle={false} />
+            <BallKickSoundEffects
+              active={gameState.match.phase !== "FINISHED"}
+              ball={gameState.ball}
+              ballHolderId={gameState.ballHolderId}
+            />
             <MatchEndMusic active={gameState.match.phase === "FINISHED"} />
             <div
               className={`pointer-events-none fixed left-1/2 z-20 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl bg-black/45 px-4 py-2 text-center text-sm font-semibold text-white backdrop-blur ${

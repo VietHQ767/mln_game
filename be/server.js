@@ -1978,7 +1978,8 @@ function resolveDuelOutcome(room, reason = "finished") {
     io.to(room.id).emit("duel-result", {
       winnerId: isCorrect ? shooterId : null,
       holderIdAfterDuel: room.ballHolderId,
-      reason
+      reason,
+      goalConfirmed: isCorrect
     });
     return;
   }
