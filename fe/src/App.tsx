@@ -11,6 +11,7 @@ import MatchEndMusic from "./components/MatchEndMusic";
 import MatchEndOverlay from "./components/MatchEndOverlay";
 import HomePage from "./components/HomePage";
 import MainMenu, { type GameMode } from "./components/MainMenu";
+import MenuMusicPicker from "./components/MenuMusicPicker";
 import QuizModal from "./components/QuizModal";
 import EnergyCharger from "./components/EnergyCharger";
 import ScoreBoard from "./components/ScoreBoard";
@@ -456,6 +457,7 @@ export default function App() {
       <BackgroundMusic active={showHomePage || showMenu} />
       <ButtonSoundEffects active={showHomePage || showMenu} />
       <SettingsButton active={showHomePage || showMenu} variant="menu" />
+      <MenuMusicPicker active={showHomePage || showMenu} />
       {showHomePage ? (
         <HomePage onStart={handleStartFromHome} />
       ) : showMenu ? (

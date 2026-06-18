@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAudioSettings } from "../contexts/AudioSettingsContext";
-
-const MUSIC_SRC = "/music_start.mp3";
+import { getMenuMusicTrackSrc } from "../utils/menuMusicTracks";
 
 interface BackgroundMusicProps {
   active: boolean;
@@ -9,7 +8,8 @@ interface BackgroundMusicProps {
 
 export default function BackgroundMusic({ active }: BackgroundMusicProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const { musicVolume, musicEnabled } = useAudioSettings();
+  const { musicVolume, musicEnabled, menuMusicTrack } = useAudioSettings();
+  const musicSrc = getMenuMusicTrackSrc(menuMusicTrack);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -23,7 +23,7 @@ export default function BackgroundMusic({ active }: BackgroundMusicProps) {
     }
 
     audio.pause();
-  }, [active, musicEnabled, musicVolume]);
+  }, [active, musicEnabled, musicVolume, musicSrc]);
 
   useEffect(() => {
     if (!active || !musicEnabled || musicVolume <= 0) return;
@@ -37,7 +37,7 @@ export default function BackgroundMusic({ active }: BackgroundMusicProps) {
 
     window.addEventListener("pointerdown", tryPlay, { once: true });
     return () => window.removeEventListener("pointerdown", tryPlay);
-  }, [active, musicEnabled, musicVolume]);
+  }, [active, musicEnabled, musicVolume, musicSrc]);
 
-  return <audio ref={audioRef} src={MUSIC_SRC} loop preload="auto" />;
+  return <audio key={musicSrc} ref={audioRef} src={musicSrc} loop preload="auto" />;
 }
