@@ -133,8 +133,6 @@ export default function App() {
         return;
       }
 
-      const roomPlayerCount = (payload.redCount ?? 0) + (payload.blueCount ?? 0);
-
       setTeamAvailability({
         exists: true,
         redCount: payload.redCount ?? 0,
